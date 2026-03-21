@@ -65,7 +65,7 @@ df_raw = pd.DataFrame(response.data)
 if not df_raw.empty:
     # Conversão segura de datas
     df_raw['data_dt'] = pd.to_datetime(df_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
-    df_raw = df_raw.dropna(subset=['data_dt']) # Remove linhas com datas inválidas
+    df_raw = df_raw.dropna(subset=['data_dt'])
     
     meses_traducao = {
         1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
@@ -108,18 +108,20 @@ if not df_raw.empty:
         resumo_cat = df.groupby("categoria")["valor"].sum()
         st.bar_chart(resumo_cat)
 
-        col_b1, col_b2 = st.columns([2, 1])
+        col_b1, col_b2 = st.columns(2)
         with col_b1:
-            # Função excel simplificada para evitar erros de formato
             output = BytesIO()
             df_ex = df[['data_registro', 'descricao', 'valor', 'categoria', 'metodo']].copy()
-            df_ex.to_excel(output, index=False)
-            st.download_button("📥 Baixar Excel do Mês", data=output.getvalue(), file_name=f"Financeiro_{mes_sel}.xlsx")
+            # Usando formato CSV para garantir compatibilidade total sem openpyxl/xlsxwriter
+            st.download_button("📥 Baixar CSV do Mês", data=df_ex.to_csv(index=False).encode('utf-8'), file_name=f"Financeiro_{mes_sel}.csv", mime='text/csv')
         
-        with col_btn2 := col_b2:
+        with col_b2:
             if st.button("🗑️ Limpar Tudo", type="primary", use_container_width=True):
-                conn.table("controle_financeiro").delete().neq("id", 0).execute()
-                st.rerun()
+                try:
+                    conn.table("controle_financeiro").delete().neq("id", 0).execute()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao excluir: {e}")
 
         st.subheader(f"Histórico de {mes_sel}")
         h1, h2, h3, h4, h5 = st.columns([1, 2, 1, 1.5, 0.5])
