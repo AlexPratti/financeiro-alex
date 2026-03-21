@@ -11,13 +11,15 @@ st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
 # --- VALIDAÇÃO DE USUÁRIO ---
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
+    st.session_state["familiar_nome"] = ""
 
 if not st.session_state["autenticado"]:
     st.title("🔐 Acesso ao Sistema")
-    user_input = st.text_input("Informe seu usuário:").strip().lower()
+    user_input = st.text_input("Informe seu usuário:").strip().capitalize()
     if st.button("Acessar"):
-        if user_input in ["merlim", "pratti"]:
+        if user_input.lower() in ["merlim", "pratti"]:
             st.session_state["autenticado"] = True
+            st.session_state["familiar_nome"] = user_input
             st.rerun()
         else:
             st.error("Usuário não autorizado.")
@@ -29,6 +31,7 @@ st_autorefresh(interval=20000, key="datarefresh")
 # --- CONEXÃO COM SUPABASE ---
 conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["URL_SUPABASE"], key=st.secrets["KEY_SUPABASE"])
 
+st.sidebar.write(f"👤 Logado como: **{st.session_state['familiar_nome']}**")
 st.title("📊 Controle Financeiro Familiar")
 
 # --- FORMULÁRIO DE ENTRADA ---
@@ -49,70 +52,75 @@ with st.form("form_despesa", clear_on_submit=True):
                 "descricao": desc,
                 "valor": valor,
                 "categoria": cat,
-                "metodo": metodo
+                "metodo": metodo,
+                "familiar": st.session_state["familiar_nome"] # Identifica quem lançou na coluna 'familiar'
             }
             try:
                 conn.table("controle_financeiro").insert(nova_linha).execute()
-                st.success("✅ Registrado!")
+                st.success(f"✅ Registrado por {st.session_state['familiar_nome']}!")
                 st.rerun()
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro ao salvar: {e}. Verifique se a coluna 'familiar' existe na tabela.")
 
 # --- BUSCA E FILTRAGEM DE DADOS ---
 response = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
 df_raw = pd.DataFrame(response.data)
 
 if not df_raw.empty:
-    # Conversão de datas
+    # Tratamento de Datas
     df_raw['data_dt'] = pd.to_datetime(df_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
     df_raw = df_raw.dropna(subset=['data_dt'])
     
-    meses_traducao = {
-        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho',
-        7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
-    }
+    meses_trad = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 
+                  7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
     
-    df_raw['Mes_PT'] = df_raw['data_dt'].dt.month.map(meses_traducao)
+    df_raw['Mes_PT'] = df_raw['data_dt'].dt.month.map(meses_trad)
     df_raw['Ano'] = df_raw['data_dt'].dt.year.astype(str)
+    
+    # Preenchimento para registros que não possuem a coluna 'familiar' preenchida
+    if 'familiar' not in df_raw.columns:
+        df_raw['familiar'] = "Não Inf."
+    df_raw['familiar'] = df_raw['familiar'].fillna("Não Inf.")
 
-    # --- FILTROS NA SIDEBAR (CLIQUE NA SETA NO CANTO SUPERIOR ESQUERDO) ---
-    st.sidebar.header("🔍 Filtros de Visualização")
+    # --- FILTROS NA SIDEBAR ---
+    st.sidebar.header("🔍 Filtros")
     
     anos_list = sorted(df_raw['Ano'].unique(), reverse=True)
-    ano_atual = str(datetime.now().year)
-    index_ano = anos_list.index(ano_atual) if ano_atual in anos_list else 0
-    ano_sel = st.sidebar.selectbox("Ano", anos_list, index=index_ano)
+    ano_sel = st.sidebar.selectbox("Ano", anos_list)
 
     meses_ordem = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
-    mes_atual_nome = meses_traducao[datetime.now().month]
-    
     df_ano = df_raw[df_raw['Ano'] == ano_sel]
     meses_disp = [m for m in meses_ordem if m in df_ano['Mes_PT'].unique()]
-    
-    index_mes = meses_disp.index(mes_atual_nome) if mes_atual_nome in meses_disp else 0
-    mes_sel = st.sidebar.selectbox("Mês", meses_disp, index=index_mes)
+    mes_sel = st.sidebar.selectbox("Mês", meses_disp)
 
-    # DataFrame Final Filtrado conforme Sidebar
+    # Filtro por Membro da Família
+    fams_disp = ["Todos"] + sorted(df_raw['familiar'].unique().tolist())
+    familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
+
+    # Aplicação dos Filtros ao DataFrame
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
+    if familiar_filter != "Todos":
+        df = df[df['familiar'] == familiar_filter]
 
     if not df.empty:
         st.divider()
         c1, c2 = st.columns(2)
         total_geral = df["valor"].sum()
         total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum()
-        c1.metric(f"💰 Total {mes_sel}", f"R$ {total_geral:,.2f}")
-        c2.metric("💳 Cartão no Mês", f"R$ {total_cartao:,.2f}")
+        
+        txt_total = f"💰 Total ({familiar_filter})" if familiar_filter != "Todos" else f"💰 Total {mes_sel}"
+        c1.metric(txt_total, f"R$ {total_geral:,.2f}")
+        c2.metric("💳 Cartão no Período", f"R$ {total_cartao:,.2f}")
 
-        # Gráfico por Categoria
-        st.subheader(f"Análise por Categoria: {mes_sel}/{ano_sel}")
+        st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
         resumo_cat = df.groupby("categoria")["valor"].sum()
         st.bar_chart(resumo_cat)
 
-        # --- FUNÇÃO EXCEL FORMATADO ---
+        # --- EXCEL FORMATADO ---
         def gerar_excel_formatado(data_frame):
             output = BytesIO()
-            df_export = data_frame[['data_registro', 'descricao', 'valor', 'categoria', 'metodo']].copy()
-            df_export.columns = ['Data', 'Descrição', 'Valor', 'Categoria', 'Método']
+            df_export = data_frame[['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']].copy()
+            df_export.columns = ['Data', 'Descrição', 'Valor', 'Categoria', 'Método', 'Familiar']
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_export.to_excel(writer, sheet_name='Lançamentos', index=False)
                 workbook = writer.book
@@ -121,50 +129,44 @@ if not df_raw.empty:
                 money_fmt = workbook.add_format({'num_format': 'R$ #,##0.00', 'border': 1})
                 for col_num, value in enumerate(df_export.columns.values):
                     worksheet.write(0, col_num, value, header_fmt)
-                worksheet.set_column('A:B', 20); worksheet.set_column('C:C', 15, money_fmt); worksheet.set_column('D:E', 20)
+                worksheet.set_column('A:B', 18); worksheet.set_column('C:C', 15, money_fmt); worksheet.set_column('D:F', 18)
             return output.getvalue()
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            excel_data = gerar_excel_formatado(df)
             st.download_button(
-                label=f"📥 Baixar Relatório {mes_sel} (Excel)",
-                data=excel_data,
-                file_name=f"Relatorio_{mes_sel}_{ano_sel}.xlsx",
+                label=f"📥 Relatório {familiar_filter} (Excel)",
+                data=gerar_excel_formatado(df),
+                file_name=f"Financeiro_{familiar_filter}_{mes_sel}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         
         with col_b2:
-            if st.button("🗑️ Limpar Mês Selecionado", type="primary", use_container_width=True):
-                try:
-                    ids_para_deletar = df['id'].tolist()
-                    for id_del in ids_para_deletar:
-                        conn.table("controle_financeiro").delete().eq("id", id_del).execute()
-                    st.success(f"Dados de {mes_sel} removidos!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro: {e}")
+            if st.button("🗑️ Limpar Seleção", type="primary", use_container_width=True):
+                # Deleta apenas os itens que estão aparecendo no filtro atual
+                for id_del in df['id'].tolist():
+                    conn.table("controle_financeiro").delete().eq("id", id_del).execute()
+                st.rerun()
 
-        st.subheader(f"Histórico de {mes_sel}")
-        h1, h2, h3, h4, h5 = st.columns([1, 2, 1, 1.5, 0.5])
-        h1.write("**Data**"); h2.write("**Descrição**"); h3.write("**Valor**"); h4.write("**Método**"); h5.write("**Ação**")
+        st.subheader(f"Histórico: {familiar_filter}")
+        h1, h2, h3, h4, h5, h6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
+        h1.write("**Data**"); h2.write("**Descrição**"); h3.write("**Valor**"); h4.write("**Método**"); h5.write("**Familiar**"); h6.write("**Ação**")
         
         for _, row in df.iterrows():
-            r1, r2, r3, r4, r5 = st.columns([1, 2, 1, 1.5, 0.5])
+            r1, r2, r3, r4, r5, r6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
             r1.write(row['data_registro'])
             r2.write(row['descricao'])
             r3.write(f"R$ {row['valor']:.2f}")
             r4.write(row['metodo'])
-            if r5.button("🗑️", key=f"del_{row['id']}"):
+            r5.write(row['familiar'])
+            if r6.button("🗑️", key=f"del_{row['id']}"):
                 conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
                 st.rerun()
     else:
-        st.info(f"Nenhum dado encontrado para {mes_sel}/{ano_sel}.")
-
+        st.info(f"Nenhum dado para {familiar_filter} em {mes_sel}/{ano_sel}.")
 else:
     st.info("Aguardando lançamentos...")
 
-# Logout na Sidebar
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
     st.rerun()
