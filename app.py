@@ -3,6 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 from io import BytesIO
 from datetime import datetime
+from streamlit_autorefresh import st_autorefresh # IMPORTANTE: Adicionar ao requirements.txt
 
 # Configuração da Página para Mobile e Desktop
 st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
@@ -23,9 +24,9 @@ if not st.session_state["autenticado"]:
             st.error("Usuário não autorizado. Acesso negado.")
     st.stop()
 
-# --- ATUALIZAÇÃO AUTOMÁTICA (Auto-refresh) ---
-# Atualiza os dados a cada 10 segundos para sincronizar Merlim e Pratti
-st.fragment(run_every=10)(lambda: None)() 
+# --- ATUALIZAÇÃO AUTOMÁTICA REAL ---
+# Força o script inteiro a rodar a cada 20 segundos
+st_autorefresh(interval=20000, key="datarefresh")
 
 # --- A PARTIR DAQUI O CÓDIGO ORIGINAL SEGUE IGUAL ---
 st.title("📊 Controle Financeiro Familiar")
@@ -66,7 +67,7 @@ with st.form("form_despesa", clear_on_submit=True):
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
 
-# --- BUSCA DE DADOS ---
+# --- BUSCA DE DADOS (Agora roda a cada 20s pelo autorefresh) ---
 response = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
 df = pd.DataFrame(response.data)
 
