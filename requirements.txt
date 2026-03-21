@@ -1,1 +1,6 @@
+streamlit
+st-supabase-connection
+pandas
+xlsxwriter
+openpyxl
 
