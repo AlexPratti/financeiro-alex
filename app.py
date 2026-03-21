@@ -9,8 +9,13 @@ st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="center
 
 st.title("📊 Controle Financeiro Familiar")
 
-# 1. Conexão com Supabase (Configurar nos Secrets do Streamlit Cloud)
-conn = st.connection("supabase", type=SupabaseConnection)
+# 1. Conexão com Supabase (Ajustado para ler as chaves do seu print)
+conn = st.connection(
+    "supabase", 
+    type=SupabaseConnection,
+    url=st.secrets["URL_SUPABASE"],
+    key=st.secrets["KEY_SUPABASE"]
+)
 
 # --- FORMULÁRIO DE ENTRADA ---
 with st.form("form_despesa", clear_on_submit=True):
@@ -103,4 +108,3 @@ if not df.empty:
     st.dataframe(df[['data_registro', 'descricao', 'valor', 'categoria', 'metodo']], use_container_width=True)
 else:
     st.info("Aguardando o primeiro lançamento para gerar o resumo...")
-
