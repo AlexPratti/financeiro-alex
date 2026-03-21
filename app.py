@@ -13,7 +13,6 @@ if "autenticado" not in st.session_state:
 
 if not st.session_state["autenticado"]:
     st.title("🔐 Acesso ao Sistema")
-    # O .strip().lower() garante que "Merlim", "MERLIM" ou "merlim" funcionem
     user_input = st.text_input("Informe seu usuário para acessar:").strip().lower()
     
     if st.button("Acessar"):
@@ -22,12 +21,16 @@ if not st.session_state["autenticado"]:
             st.rerun()
         else:
             st.error("Usuário não autorizado. Acesso negado.")
-    st.stop() # Interrompe o script aqui se não for um dos dois usuários
+    st.stop()
+
+# --- ATUALIZAÇÃO AUTOMÁTICA (Auto-refresh) ---
+# Atualiza os dados a cada 10 segundos para sincronizar Merlim e Pratti
+st.fragment(run_every=10)(lambda: None)() 
 
 # --- A PARTIR DAQUI O CÓDIGO ORIGINAL SEGUE IGUAL ---
 st.title("📊 Controle Financeiro Familiar")
 
-# 1. Conexão com Supabase (Configurado para suas chaves específicas)
+# 1. Conexão com Supabase
 conn = st.connection(
     "supabase", 
     type=SupabaseConnection,
@@ -111,7 +114,7 @@ if not df.empty:
         return output.getvalue()
 
     # --- BOTÕES DE AÇÃO ---
-    col_btn1, col_btn2 = st.columns([2, 1])
+    col_btn1, col_btn2 = st.columns()
     with col_btn1:
         excel_data = gerar_excel_formatado(df)
         st.download_button(
