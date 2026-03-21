@@ -9,7 +9,7 @@ st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="center
 
 st.title("📊 Controle Financeiro Familiar")
 
-# 1. Conexão com Supabase (Ajustado para ler as chaves do seu print)
+# 1. Conexão com Supabase (Configurado para suas chaves específicas)
 conn = st.connection(
     "supabase", 
     type=SupabaseConnection,
@@ -38,7 +38,6 @@ with st.form("form_despesa", clear_on_submit=True):
                 "categoria": cat,
                 "metodo": metodo
             }
-            # Enviando para a tabela correta no Supabase
             try:
                 conn.table("controle_financeiro").insert(nova_linha).execute()
                 st.success("✅ Registrado com sucesso!")
@@ -76,7 +75,6 @@ if not df.empty:
             workbook = writer.book
             worksheet = writer.sheets['Lançamentos']
             
-            # Estilo idêntico à sua referência (Azul Escuro / Branco)
             header_fmt = workbook.add_format({
                 'bold': True, 'align': 'center', 'valign': 'vcenter',
                 'fg_color': '#1F4E78', 'font_color': 'white', 'border': 1
@@ -94,17 +92,56 @@ if not df.empty:
             
         return output.getvalue()
 
-    # --- BOTÃO DE DOWNLOAD ---
-    excel_data = gerar_excel_formatado(df)
-    st.download_button(
-        label="📥 Baixar Relatório Excel Profissional",
-        data=excel_data,
-        file_name=f"Financeiro_{datetime.now().strftime('%m_%Y')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    # --- BOTÕES DE AÇÃO (EXCEL E EXCLUIR TUDO) ---
+    col_btn1, col_btn2 = st.columns([3, 1])
+    with col_btn1:
+        excel_data = gerar_excel_formatado(df)
+        st.download_button(
+            label="📥 Baixar Relatório Excel Profissional",
+            data=excel_data,
+            file_name=f"Financeiro_{datetime.now().strftime('%m_%Y')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    
+    with col_btn2:
+        if st.button("🗑️ Limpar Tudo", type="primary", use_container_width=True):
+            if st.session_state.get('confirm_delete_all'):
+                try:
+                    # Deleta todas as linhas baseando-se no ID (que é único)
+                    conn.table("controle_financeiro").delete().neq("id", 0).execute()
+                    st.success("Tudo foi excluído!")
+                    st.session_state['confirm_delete_all'] = False
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao excluir tudo: {e}")
+            else:
+                st.session_state['confirm_delete_all'] = True
+                st.warning("Clique novamente para confirmar!")
 
-    # --- TABELA DE HISTÓRICO ---
+    # --- TABELA DE HISTÓRICO COM EXCLUSÃO INDIVIDUAL ---
     st.subheader("Histórico de Lançamentos")
-    st.dataframe(df[['data_registro', 'descricao', 'valor', 'categoria', 'metodo']], use_container_width=True)
+    
+    # Criando colunas para o cabeçalho
+    h_col1, h_col2, h_col3, h_col4 = st.columns([1, 2, 1, 0.5])
+    h_col1.write("**Data**")
+    h_col2.write("**Descrição**")
+    h_col3.write("**Valor**")
+    h_col4.write("**Ação**")
+    
+    for index, row in df.iterrows():
+        r_col1, r_col2, r_col3, r_col4 = st.columns([1, 2, 1, 0.5])
+        r_col1.write(row['data_registro'])
+        r_col2.write(row['descricao'])
+        r_col3.write(f"R$ {row['valor']:.2f}")
+        
+        # Botão para excluir linha específica
+        if r_col4.button("🗑️", key=f"del_{row['id']}"):
+            try:
+                conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
+                st.success("Excluído!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro: {e}")
+
 else:
     st.info("Aguardando o primeiro lançamento para gerar o resumo...")
