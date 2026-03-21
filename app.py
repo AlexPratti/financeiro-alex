@@ -38,7 +38,7 @@ with st.form("form_despesa", clear_on_submit=True):
     col1, col2 = st.columns(2)
     with col1:
         valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f")
-        cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Carro", "Lazer", "Cartão", "Outros"])
+        cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Carro", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
     with col2:
         metodo = st.selectbox("Método", ["Dinheiro/Pix", "Cartão de Crédito", "Cartão de Débito"])
     
@@ -63,21 +63,20 @@ response = conn.table("controle_financeiro").select("*").order("created_at", des
 df_raw = pd.DataFrame(response.data)
 
 if not df_raw.empty:
-    # Conversão segura de datas
+    # Conversão de datas
     df_raw['data_dt'] = pd.to_datetime(df_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
     df_raw = df_raw.dropna(subset=['data_dt'])
     
     meses_traducao = {
-        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril',
-        5: 'Maio', 6: 'Junho', 7: 'Julho', 8: 'Agosto',
-        9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
+        1: 'Janeiro', 2: 'Fevereiro', 3: 'Março', 4: 'Abril', 5: 'Maio', 6: 'Junho',
+        7: 'Julho', 8: 'Agosto', 9: 'Setembro', 10: 'Outubro', 11: 'Novembro', 12: 'Dezembro'
     }
     
     df_raw['Mes_PT'] = df_raw['data_dt'].dt.month.map(meses_traducao)
     df_raw['Ano'] = df_raw['data_dt'].dt.year.astype(str)
 
-    # Filtros na Sidebar
-    st.sidebar.header("🔍 Filtros")
+    # --- FILTROS NA SIDEBAR (CLIQUE NA SETA NO CANTO SUPERIOR ESQUERDO) ---
+    st.sidebar.header("🔍 Filtros de Visualização")
     
     anos_list = sorted(df_raw['Ano'].unique(), reverse=True)
     ano_atual = str(datetime.now().year)
@@ -93,7 +92,7 @@ if not df_raw.empty:
     index_mes = meses_disp.index(mes_atual_nome) if mes_atual_nome in meses_disp else 0
     mes_sel = st.sidebar.selectbox("Mês", meses_disp, index=index_mes)
 
-    # DataFrame Final Filtrado
+    # DataFrame Final Filtrado conforme Sidebar
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
 
     if not df.empty:
@@ -102,26 +101,49 @@ if not df_raw.empty:
         total_geral = df["valor"].sum()
         total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum()
         c1.metric(f"💰 Total {mes_sel}", f"R$ {total_geral:,.2f}")
-        c2.metric("💳 Cartão", f"R$ {total_cartao:,.2f}")
+        c2.metric("💳 Cartão no Mês", f"R$ {total_cartao:,.2f}")
 
-        st.subheader(f"Análise: {mes_sel}/{ano_sel}")
+        # Gráfico por Categoria
+        st.subheader(f"Análise por Categoria: {mes_sel}/{ano_sel}")
         resumo_cat = df.groupby("categoria")["valor"].sum()
         st.bar_chart(resumo_cat)
 
+        # --- FUNÇÃO EXCEL FORMATADO ---
+        def gerar_excel_formatado(data_frame):
+            output = BytesIO()
+            df_export = data_frame[['data_registro', 'descricao', 'valor', 'categoria', 'metodo']].copy()
+            df_export.columns = ['Data', 'Descrição', 'Valor', 'Categoria', 'Método']
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_export.to_excel(writer, sheet_name='Lançamentos', index=False)
+                workbook = writer.book
+                worksheet = writer.sheets['Lançamentos']
+                header_fmt = workbook.add_format({'bold': True, 'align': 'center', 'fg_color': '#1F4E78', 'font_color': 'white', 'border': 1})
+                money_fmt = workbook.add_format({'num_format': 'R$ #,##0.00', 'border': 1})
+                for col_num, value in enumerate(df_export.columns.values):
+                    worksheet.write(0, col_num, value, header_fmt)
+                worksheet.set_column('A:B', 20); worksheet.set_column('C:C', 15, money_fmt); worksheet.set_column('D:E', 20)
+            return output.getvalue()
+
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            output = BytesIO()
-            df_ex = df[['data_registro', 'descricao', 'valor', 'categoria', 'metodo']].copy()
-            # Usando formato CSV para garantir compatibilidade total sem openpyxl/xlsxwriter
-            st.download_button("📥 Baixar CSV do Mês", data=df_ex.to_csv(index=False).encode('utf-8'), file_name=f"Financeiro_{mes_sel}.csv", mime='text/csv')
+            excel_data = gerar_excel_formatado(df)
+            st.download_button(
+                label=f"📥 Baixar Relatório {mes_sel} (Excel)",
+                data=excel_data,
+                file_name=f"Relatorio_{mes_sel}_{ano_sel}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         
         with col_b2:
-            if st.button("🗑️ Limpar Tudo", type="primary", use_container_width=True):
+            if st.button("🗑️ Limpar Mês Selecionado", type="primary", use_container_width=True):
                 try:
-                    conn.table("controle_financeiro").delete().neq("id", 0).execute()
+                    ids_para_deletar = df['id'].tolist()
+                    for id_del in ids_para_deletar:
+                        conn.table("controle_financeiro").delete().eq("id", id_del).execute()
+                    st.success(f"Dados de {mes_sel} removidos!")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Erro ao excluir: {e}")
+                    st.error(f"Erro: {e}")
 
         st.subheader(f"Histórico de {mes_sel}")
         h1, h2, h3, h4, h5 = st.columns([1, 2, 1, 1.5, 0.5])
@@ -140,8 +162,9 @@ if not df_raw.empty:
         st.info(f"Nenhum dado encontrado para {mes_sel}/{ano_sel}.")
 
 else:
-    st.info("Aguardando lançamentos para exibir os filtros...")
+    st.info("Aguardando lançamentos...")
 
+# Logout na Sidebar
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
     st.rerun()
