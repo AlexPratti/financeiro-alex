@@ -3,4 +3,5 @@ st-supabase-connection
 pandas
 xlsxwriter
 openpyxl
+streamlit-autorefresh
 
