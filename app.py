@@ -7,6 +7,24 @@ from datetime import datetime
 # Configuração da Página para Mobile e Desktop
 st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
 
+# --- VALIDAÇÃO DE USUÁRIO ---
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+if not st.session_state["autenticado"]:
+    st.title("🔐 Acesso ao Sistema")
+    # O .strip().lower() garante que "Merlim", "MERLIM" ou "merlim" funcionem
+    user_input = st.text_input("Informe seu usuário para acessar:").strip().lower()
+    
+    if st.button("Acessar"):
+        if user_input in ["merlim", "pratti"]:
+            st.session_state["autenticado"] = True
+            st.rerun()
+        else:
+            st.error("Usuário não autorizado. Acesso negado.")
+    st.stop() # Interrompe o script aqui se não for um dos dois usuários
+
+# --- A PARTIR DAQUI O CÓDIGO ORIGINAL SEGUE IGUAL ---
 st.title("📊 Controle Financeiro Familiar")
 
 # 1. Conexão com Supabase (Configurado para suas chaves específicas)
@@ -106,17 +124,15 @@ if not df.empty:
     with col_btn2:
         if st.button("🗑️ Limpar Tudo", type="primary", use_container_width=True):
             try:
-                # Exclui todos os registros onde o ID não é zero (limpa a tabela)
                 conn.table("controle_financeiro").delete().neq("id", 0).execute()
                 st.success("Tabela limpa!")
                 st.rerun()
             except Exception as e:
                 st.error(f"Erro ao excluir tudo: {e}")
 
-    # --- TABELA DE HISTÓRICO COM COLUNA MÉTODO E EXCLUSÃO ---
+    # --- TABELA DE HISTÓRICO ---
     st.subheader("Histórico de Lançamentos")
     
-    # Criando colunas para o cabeçalho (Data, Descrição, Valor, Método, Ação)
     h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([1, 2, 1, 1.5, 0.5])
     h_col1.write("**Data**")
     h_col2.write("**Descrição**")
@@ -131,7 +147,6 @@ if not df.empty:
         r_col3.write(f"R$ {row['valor']:.2f}")
         r_col4.write(row['metodo'])
         
-        # Botão para excluir linha específica
         if r_col5.button("🗑️", key=f"del_{row['id']}"):
             try:
                 conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
