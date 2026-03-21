@@ -5,7 +5,7 @@ from io import BytesIO
 from datetime import datetime
 
 # Configuração da Página para Mobile e Desktop
-st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="centered")
+st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
 
 st.title("📊 Controle Financeiro Familiar")
 
@@ -92,8 +92,8 @@ if not df.empty:
             
         return output.getvalue()
 
-    # --- BOTÕES DE AÇÃO (EXCEL E EXCLUIR TUDO) ---
-    col_btn1, col_btn2 = st.columns([3, 1])
+    # --- BOTÕES DE AÇÃO ---
+    col_btn1, col_btn2 = st.columns([2, 1])
     with col_btn1:
         excel_data = gerar_excel_formatado(df)
         st.download_button(
@@ -105,37 +105,34 @@ if not df.empty:
     
     with col_btn2:
         if st.button("🗑️ Limpar Tudo", type="primary", use_container_width=True):
-            if st.session_state.get('confirm_delete_all'):
-                try:
-                    # Deleta todas as linhas baseando-se no ID (que é único)
-                    conn.table("controle_financeiro").delete().neq("id", 0).execute()
-                    st.success("Tudo foi excluído!")
-                    st.session_state['confirm_delete_all'] = False
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Erro ao excluir tudo: {e}")
-            else:
-                st.session_state['confirm_delete_all'] = True
-                st.warning("Clique novamente para confirmar!")
+            try:
+                # Exclui todos os registros onde o ID não é zero (limpa a tabela)
+                conn.table("controle_financeiro").delete().neq("id", 0).execute()
+                st.success("Tabela limpa!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Erro ao excluir tudo: {e}")
 
-    # --- TABELA DE HISTÓRICO COM EXCLUSÃO INDIVIDUAL ---
+    # --- TABELA DE HISTÓRICO COM COLUNA MÉTODO E EXCLUSÃO ---
     st.subheader("Histórico de Lançamentos")
     
-    # Criando colunas para o cabeçalho
-    h_col1, h_col2, h_col3, h_col4 = st.columns([1, 2, 1, 0.5])
+    # Criando colunas para o cabeçalho (Data, Descrição, Valor, Método, Ação)
+    h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([1, 2, 1, 1.5, 0.5])
     h_col1.write("**Data**")
     h_col2.write("**Descrição**")
     h_col3.write("**Valor**")
-    h_col4.write("**Ação**")
+    h_col4.write("**Método**")
+    h_col5.write("**Ação**")
     
     for index, row in df.iterrows():
-        r_col1, r_col2, r_col3, r_col4 = st.columns([1, 2, 1, 0.5])
+        r_col1, r_col2, r_col3, r_col4, r_col5 = st.columns([1, 2, 1, 1.5, 0.5])
         r_col1.write(row['data_registro'])
         r_col2.write(row['descricao'])
         r_col3.write(f"R$ {row['valor']:.2f}")
+        r_col4.write(row['metodo'])
         
         # Botão para excluir linha específica
-        if r_col4.button("🗑️", key=f"del_{row['id']}"):
+        if r_col5.button("🗑️", key=f"del_{row['id']}"):
             try:
                 conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
                 st.success("Excluído!")
