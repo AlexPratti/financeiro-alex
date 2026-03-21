@@ -3,7 +3,7 @@ from st_supabase_connection import SupabaseConnection
 import pandas as pd
 from io import BytesIO
 from datetime import datetime
-from streamlit_autorefresh import st_autorefresh # IMPORTANTE: Adicionar ao requirements.txt
+from streamlit_autorefresh import st_autorefresh
 
 # Configuração da Página para Mobile e Desktop
 st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
@@ -24,20 +24,19 @@ if not st.session_state["autenticado"]:
             st.error("Usuário não autorizado. Acesso negado.")
     st.stop()
 
-# --- ATUALIZAÇÃO AUTOMÁTICA REAL ---
-# Força o script inteiro a rodar a cada 20 segundos
+# --- ATUALIZAÇÃO AUTOMÁTICA ---
+# Só ativa o refresh se estiver logado
 st_autorefresh(interval=20000, key="datarefresh")
 
-# --- A PARTIR DAQUI O CÓDIGO ORIGINAL SEGUE IGUAL ---
-st.title("📊 Controle Financeiro Familiar")
-
-# 1. Conexão com Supabase
+# --- CONEXÃO COM SUPABASE ---
 conn = st.connection(
     "supabase", 
     type=SupabaseConnection,
     url=st.secrets["URL_SUPABASE"],
     key=st.secrets["KEY_SUPABASE"]
 )
+
+st.title("📊 Controle Financeiro Familiar")
 
 # --- FORMULÁRIO DE ENTRADA ---
 with st.form("form_despesa", clear_on_submit=True):
@@ -67,12 +66,11 @@ with st.form("form_despesa", clear_on_submit=True):
             except Exception as e:
                 st.error(f"Erro ao salvar: {e}")
 
-# --- BUSCA DE DADOS (Agora roda a cada 20s pelo autorefresh) ---
+# --- BUSCA DE DADOS ---
 response = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
 df = pd.DataFrame(response.data)
 
 if not df.empty:
-    # --- MÉTRICAS DE RESUMO ---
     st.divider()
     c1, c2 = st.columns(2)
     total_geral = df["valor"].sum()
@@ -81,41 +79,31 @@ if not df.empty:
     c1.metric("💰 Total Geral", f"R$ {total_geral:,.2f}")
     c2.metric("💳 Cartão de Crédito", f"R$ {total_cartao:,.2f}")
 
-    # --- GRÁFICO DE ANÁLISE ---
     st.subheader("Análise por Categoria")
     resumo_cat = df.groupby("categoria")["valor"].sum()
     st.bar_chart(resumo_cat)
 
-    # --- FUNÇÃO PARA EXPORTAÇÃO EXCEL FORMATADO ---
     def gerar_excel_formatado(data_frame):
         output = BytesIO()
         df_export = data_frame[['data_registro', 'descricao', 'valor', 'categoria', 'metodo']].copy()
         df_export.columns = ['Data', 'Descrição', 'Valor', 'Categoria', 'Método']
-        
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_export.to_excel(writer, sheet_name='Lançamentos', index=False)
             workbook = writer.book
             worksheet = writer.sheets['Lançamentos']
-            
-            header_fmt = workbook.add_format({
-                'bold': True, 'align': 'center', 'valign': 'vcenter',
-                'fg_color': '#1F4E78', 'font_color': 'white', 'border': 1
-            })
+            header_fmt = workbook.add_format({'bold': True, 'align': 'center', 'valign': 'vcenter', 'fg_color': '#1F4E78', 'font_color': 'white', 'border': 1})
             money_fmt = workbook.add_format({'num_format': 'R$ #,##0.00', 'border': 1, 'align': 'center'})
             cell_fmt = workbook.add_format({'border': 1, 'align': 'center'})
-
             for col_num, value in enumerate(df_export.columns.values):
                 worksheet.write(0, col_num, value, header_fmt)
-            
             worksheet.set_column('A:A', 15, cell_fmt)
             worksheet.set_column('B:B', 30, cell_fmt)
             worksheet.set_column('C:C', 18, money_fmt)
             worksheet.set_column('D:E', 20, cell_fmt)
-            
         return output.getvalue()
 
-    # --- BOTÕES DE AÇÃO ---
-    col_btn1, col_btn2 = st.columns()
+    # CORREÇÃO AQUI: Definindo explicitamente a proporção das colunas
+    col_btn1, col_btn2 = st.columns([3, 1])
     with col_btn1:
         excel_data = gerar_excel_formatado(df)
         st.download_button(
@@ -134,9 +122,7 @@ if not df.empty:
             except Exception as e:
                 st.error(f"Erro ao excluir tudo: {e}")
 
-    # --- TABELA DE HISTÓRICO ---
     st.subheader("Histórico de Lançamentos")
-    
     h_col1, h_col2, h_col3, h_col4, h_col5 = st.columns([1, 2, 1, 1.5, 0.5])
     h_col1.write("**Data**")
     h_col2.write("**Descrição**")
@@ -161,3 +147,8 @@ if not df.empty:
 
 else:
     st.info("Aguardando o primeiro lançamento para gerar o resumo...")
+
+# BOTÃO DE LOGOUT ADICIONADO PARA EVITAR ERROS DE SESSÃO
+if st.sidebar.button("Sair / Trocar Usuário"):
+    st.session_state["autenticado"] = False
+    st.rerun()
