@@ -57,7 +57,7 @@ if not df.empty:
     total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum()
     
     c1.metric("💰 Total Geral", f"R$ {total_geral:,.2f}")
-    c2.metric("💳 No Cartão", f"R$ {total_cartao:,.2f}")
+    c2.metric("💳 Cartão de Crédito", f"R$ {total_cartao:,.2f}")
 
     # --- GRÁFICO DE ANÁLISE ---
     st.subheader("Análise por Categoria")
