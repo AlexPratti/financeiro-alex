@@ -8,11 +8,13 @@ from streamlit_autorefresh import st_autorefresh
 # Configuração da Página
 st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
 
-# --- VALIDAÇÃO DE USUÁRIO ---
+# --- INICIALIZAÇÃO SEGURA DO ESTADO DA SESSÃO ---
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
+if "familiar_nome" not in st.session_state:
     st.session_state["familiar_nome"] = ""
 
+# --- VALIDAÇÃO DE USUÁRIO ---
 if not st.session_state["autenticado"]:
     st.title("🔐 Acesso ao Sistema")
     user_input = st.text_input("Informe seu usuário:").strip().capitalize()
@@ -31,6 +33,7 @@ st_autorefresh(interval=20000, key="datarefresh")
 # --- CONEXÃO COM SUPABASE ---
 conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["URL_SUPABASE"], key=st.secrets["KEY_SUPABASE"])
 
+# Agora a chave 'familiar_nome' é garantida
 st.sidebar.write(f"👤 Logado como: **{st.session_state['familiar_nome']}**")
 st.title("📊 Controle Financeiro Familiar")
 
@@ -53,7 +56,7 @@ with st.form("form_despesa", clear_on_submit=True):
                 "valor": valor,
                 "categoria": cat,
                 "metodo": metodo,
-                "familiar": st.session_state["familiar_nome"] # Identifica quem lançou na coluna 'familiar'
+                "familiar": st.session_state["familiar_nome"]
             }
             try:
                 conn.table("controle_financeiro").insert(nova_linha).execute()
@@ -67,7 +70,6 @@ response = conn.table("controle_financeiro").select("*").order("created_at", des
 df_raw = pd.DataFrame(response.data)
 
 if not df_raw.empty:
-    # Tratamento de Datas
     df_raw['data_dt'] = pd.to_datetime(df_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
     df_raw = df_raw.dropna(subset=['data_dt'])
     
@@ -77,14 +79,11 @@ if not df_raw.empty:
     df_raw['Mes_PT'] = df_raw['data_dt'].dt.month.map(meses_trad)
     df_raw['Ano'] = df_raw['data_dt'].dt.year.astype(str)
     
-    # Preenchimento para registros que não possuem a coluna 'familiar' preenchida
     if 'familiar' not in df_raw.columns:
         df_raw['familiar'] = "Não Inf."
     df_raw['familiar'] = df_raw['familiar'].fillna("Não Inf.")
 
-    # --- FILTROS NA SIDEBAR ---
     st.sidebar.header("🔍 Filtros")
-    
     anos_list = sorted(df_raw['Ano'].unique(), reverse=True)
     ano_sel = st.sidebar.selectbox("Ano", anos_list)
 
@@ -93,11 +92,9 @@ if not df_raw.empty:
     meses_disp = [m for m in meses_ordem if m in df_ano['Mes_PT'].unique()]
     mes_sel = st.sidebar.selectbox("Mês", meses_disp)
 
-    # Filtro por Membro da Família
     fams_disp = ["Todos"] + sorted(df_raw['familiar'].unique().tolist())
     familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
 
-    # Aplicação dos Filtros ao DataFrame
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
     if familiar_filter != "Todos":
         df = df[df['familiar'] == familiar_filter]
@@ -116,7 +113,6 @@ if not df_raw.empty:
         resumo_cat = df.groupby("categoria")["valor"].sum()
         st.bar_chart(resumo_cat)
 
-        # --- EXCEL FORMATADO ---
         def gerar_excel_formatado(data_frame):
             output = BytesIO()
             df_export = data_frame[['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']].copy()
@@ -143,7 +139,6 @@ if not df_raw.empty:
         
         with col_b2:
             if st.button("🗑️ Limpar Seleção", type="primary", use_container_width=True):
-                # Deleta apenas os itens que estão aparecendo no filtro atual
                 for id_del in df['id'].tolist():
                     conn.table("controle_financeiro").delete().eq("id", id_del).execute()
                 st.rerun()
@@ -169,4 +164,5 @@ else:
 
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
+    st.session_state["familiar_nome"] = ""
     st.rerun()
