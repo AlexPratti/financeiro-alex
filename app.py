@@ -5,7 +5,7 @@ from io import BytesIO
 from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
-# Configuração da Página
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
 
 # --- INICIALIZAÇÃO SEGURA DO ESTADO DA SESSÃO ---
@@ -36,16 +36,16 @@ conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["URL_SU
 st.sidebar.write(f"👤 Logado como: **{st.session_state['familiar_nome']}**")
 st.title("📊 Controle Financeiro Familiar")
 
-# --- FORMULÁRIOS DE ENTRADA (DESPESAS E SALDO) ---
-col_f1, col_f2 = st.columns(2)
+# --- FORMULÁRIOS DE ENTRADA (USANDO ABAS PARA GARANTIR VISIBILIDADE) ---
+st.subheader("📝 Novo Lançamento")
+tab_gastos, tab_receitas = st.tabs(["💸 Registrar Despesa", "📈 Registrar Saldo/Entrada"])
 
-with col_f1:
+with tab_gastos:
     with st.form("form_despesa", clear_on_submit=True):
-        st.subheader("💸 Novo Gasto (Saída)")
-        desc = st.text_input("Descrição")
+        desc = st.text_input("Descrição da Despesa")
         c1, c2 = st.columns(2)
         with c1:
-            valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f")
+            valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f", key="input_valor_despesa")
             cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
         with c2:
             metodo = st.selectbox("Método", ["Dinheiro/Pix", "Cartão de Crédito", "Cartão de Débito"])
@@ -61,13 +61,12 @@ with col_f1:
                 st.success("✅ Despesa Registrada!")
                 st.rerun()
 
-with col_f2:
+with tab_receitas:
     with st.form("form_entrada", clear_on_submit=True):
-        st.subheader("📈 Nova Receita (Entrada)")
-        desc_e = st.text_input("Descrição da Receita")
+        desc_e = st.text_input("Descrição da Receita (Ex: Salário)")
         ce1, ce2 = st.columns(2)
         with ce1:
-            valor_e = st.number_input("Valor Recebido (R$)", min_value=0.0, step=0.01, format="%.2f")
+            valor_e = st.number_input("Valor Recebido (R$)", min_value=0.0, step=0.01, format="%.2f", key="input_valor_entrada")
         with ce2:
             tipo_e = st.selectbox("Origem", ["Salário", "Adiantamento Salarial", "Serviços Autônomos", "Outros"])
         
@@ -89,15 +88,14 @@ resp_ent = conn.table("entradas_financeiras").select("*").order("created_at", de
 df_raw = pd.DataFrame(resp_desp.data)
 df_ent_raw = pd.DataFrame(resp_ent.data)
 
+# Processamento apenas se houver despesas (mantendo sua lógica original)
 if not df_raw.empty:
-    # Tratamento de Datas para Despesas
     df_raw['data_dt'] = pd.to_datetime(df_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
     df_raw = df_raw.dropna(subset=['data_dt'])
     meses_trad = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
     df_raw['Mes_PT'] = df_raw['data_dt'].dt.month.map(meses_trad)
     df_raw['Ano'] = df_raw['data_dt'].dt.year.astype(str)
     
-    # Tratamento de Datas para Entradas
     if not df_ent_raw.empty:
         df_ent_raw['data_dt'] = pd.to_datetime(df_ent_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
         df_ent_raw = df_ent_raw.dropna(subset=['data_dt'])
@@ -115,7 +113,7 @@ if not df_raw.empty:
     fams_disp = ["Todos"] + sorted(df_raw['familiar'].unique().tolist())
     familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
 
-    # Filtragem Final dos DataFrames
+    # Filtragem Final
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
     df_e = pd.DataFrame()
     if not df_ent_raw.empty:
@@ -126,7 +124,7 @@ if not df_raw.empty:
         if not df_e.empty:
             df_e = df_e[df_e['familiar'] == familiar_filter]
 
-    # --- MÉTRICAS E DASHBOARD ---
+    # --- MÉTRICAS ---
     st.divider()
     c1, c2, c3 = st.columns(3)
     
@@ -140,7 +138,7 @@ if not df_raw.empty:
     c3.metric("⚖️ Saldo do Período", f"R$ {saldo_final:,.2f}", delta=f"Cartão: R$ {total_cartao:,.2f}", delta_color="inverse")
 
     if not df.empty:
-        st.subheader(f"Análise de Gastos: {mes_sel}/{ano_sel} - [{familiar_filter}]")
+        st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
         resumo_cat = df.groupby("categoria")["valor"].sum()
         st.bar_chart(resumo_cat)
 
@@ -191,7 +189,7 @@ if not df_raw.empty:
                 conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
                 st.rerun()
 
-        # Histórico de Entradas (Novo, seguindo o padrão da lixeira)
+        # Histórico de Entradas
         if not df_e.empty:
             st.divider()
             st.subheader(f"Histórico de Entradas: {familiar_filter}")
@@ -206,10 +204,8 @@ if not df_raw.empty:
                 if re5.button("🗑️", key=f"del_e_{row_e['id']}"):
                     conn.table("entradas_financeiras").delete().eq("id", row_e['id']).execute()
                     st.rerun()
-    else:
-        st.info(f"Nenhum dado para {familiar_filter} em {mes_sel}/{ano_sel}.")
 else:
-    st.info("Aguardando lançamentos...")
+    st.info("Aguardando lançamentos para gerar o relatório...")
 
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
