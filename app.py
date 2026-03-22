@@ -44,7 +44,7 @@ with st.form("form_despesa", clear_on_submit=True):
     col1, col2 = st.columns(2)
     with col1:
         valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f")
-        cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Utilidades Domésticas", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
+        cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
     with col2:
         metodo = st.selectbox("Método", ["Dinheiro/Pix", "Cartão de Crédito", "Cartão de Débito"])
     
