@@ -33,86 +33,118 @@ st_autorefresh(interval=20000, key="datarefresh")
 # --- CONEXÃO COM SUPABASE ---
 conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["URL_SUPABASE"], key=st.secrets["KEY_SUPABASE"])
 
-# Agora a chave 'familiar_nome' é garantida
 st.sidebar.write(f"👤 Logado como: **{st.session_state['familiar_nome']}**")
 st.title("📊 Controle Financeiro Familiar")
 
-# --- FORMULÁRIO DE ENTRADA ---
-with st.form("form_despesa", clear_on_submit=True):
-    st.subheader("Novo Lançamento")
-    desc = st.text_input("Descrição")
-    col1, col2 = st.columns(2)
-    with col1:
-        valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f")
-        cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
-    with col2:
-        metodo = st.selectbox("Método", ["Dinheiro/Pix", "Cartão de Crédito", "Cartão de Débito"])
-    
-    if st.form_submit_button("🚀 Registrar Despesa"):
-        if desc and valor > 0:
-            nova_linha = {
-                "data_registro": datetime.now().strftime("%d/%m/%Y"),
-                "descricao": desc,
-                "valor": valor,
-                "categoria": cat,
-                "metodo": metodo,
-                "familiar": st.session_state["familiar_nome"]
-            }
-            try:
+# --- FORMULÁRIOS DE ENTRADA (DESPESAS E SALDO) ---
+col_f1, col_f2 = st.columns(2)
+
+with col_f1:
+    with st.form("form_despesa", clear_on_submit=True):
+        st.subheader("💸 Novo Gasto (Saída)")
+        desc = st.text_input("Descrição")
+        c1, c2 = st.columns(2)
+        with c1:
+            valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f")
+            cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
+        with c2:
+            metodo = st.selectbox("Método", ["Dinheiro/Pix", "Cartão de Crédito", "Cartão de Débito"])
+        
+        if st.form_submit_button("🚀 Registrar Despesa"):
+            if desc and valor > 0:
+                nova_linha = {
+                    "data_registro": datetime.now().strftime("%d/%m/%Y"),
+                    "descricao": desc, "valor": valor, "categoria": cat, "metodo": metodo,
+                    "familiar": st.session_state["familiar_nome"]
+                }
                 conn.table("controle_financeiro").insert(nova_linha).execute()
-                st.success(f"✅ Registrado por {st.session_state['familiar_nome']}!")
+                st.success("✅ Despesa Registrada!")
                 st.rerun()
-            except Exception as e:
-                st.error(f"Erro ao salvar: {e}. Verifique se a coluna 'familiar' existe na tabela.")
+
+with col_f2:
+    with st.form("form_entrada", clear_on_submit=True):
+        st.subheader("📈 Nova Receita (Entrada)")
+        desc_e = st.text_input("Descrição da Receita")
+        ce1, ce2 = st.columns(2)
+        with ce1:
+            valor_e = st.number_input("Valor Recebido (R$)", min_value=0.0, step=0.01, format="%.2f")
+        with ce2:
+            tipo_e = st.selectbox("Origem", ["Salário", "Adiantamento Salarial", "Serviços Autônomos", "Outros"])
+        
+        if st.form_submit_button("💰 Registrar Entrada"):
+            if desc_e and valor_e > 0:
+                nova_entrada = {
+                    "data_registro": datetime.now().strftime("%d/%m/%Y"),
+                    "descricao": desc_e, "valor": valor_e, "tipo_entrada": tipo_e,
+                    "familiar": st.session_state["familiar_nome"]
+                }
+                conn.table("entradas_financeiras").insert(nova_entrada).execute()
+                st.success("✅ Entrada Registrada!")
+                st.rerun()
 
 # --- BUSCA E FILTRAGEM DE DADOS ---
-response = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
-df_raw = pd.DataFrame(response.data)
+resp_desp = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
+resp_ent = conn.table("entradas_financeiras").select("*").order("created_at", desc=True).execute()
+
+df_raw = pd.DataFrame(resp_desp.data)
+df_ent_raw = pd.DataFrame(resp_ent.data)
 
 if not df_raw.empty:
+    # Tratamento de Datas para Despesas
     df_raw['data_dt'] = pd.to_datetime(df_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
     df_raw = df_raw.dropna(subset=['data_dt'])
-    
-    meses_trad = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 
-                  7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
-    
+    meses_trad = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
     df_raw['Mes_PT'] = df_raw['data_dt'].dt.month.map(meses_trad)
     df_raw['Ano'] = df_raw['data_dt'].dt.year.astype(str)
     
-    if 'familiar' not in df_raw.columns:
-        df_raw['familiar'] = "Não Inf."
-    df_raw['familiar'] = df_raw['familiar'].fillna("Não Inf.")
+    # Tratamento de Datas para Entradas
+    if not df_ent_raw.empty:
+        df_ent_raw['data_dt'] = pd.to_datetime(df_ent_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
+        df_ent_raw = df_ent_raw.dropna(subset=['data_dt'])
+        df_ent_raw['Mes_PT'] = df_ent_raw['data_dt'].dt.month.map(meses_trad)
+        df_ent_raw['Ano'] = df_ent_raw['data_dt'].dt.year.astype(str)
 
+    # Filtros na Sidebar
     st.sidebar.header("🔍 Filtros")
     anos_list = sorted(df_raw['Ano'].unique(), reverse=True)
     ano_sel = st.sidebar.selectbox("Ano", anos_list)
-
     meses_ordem = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
     df_ano = df_raw[df_raw['Ano'] == ano_sel]
     meses_disp = [m for m in meses_ordem if m in df_ano['Mes_PT'].unique()]
     mes_sel = st.sidebar.selectbox("Mês", meses_disp)
-
     fams_disp = ["Todos"] + sorted(df_raw['familiar'].unique().tolist())
     familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
 
+    # Filtragem Final dos DataFrames
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
+    df_e = pd.DataFrame()
+    if not df_ent_raw.empty:
+        df_e = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)].copy()
+
     if familiar_filter != "Todos":
         df = df[df['familiar'] == familiar_filter]
+        if not df_e.empty:
+            df_e = df_e[df_e['familiar'] == familiar_filter]
+
+    # --- MÉTRICAS E DASHBOARD ---
+    st.divider()
+    c1, c2, c3 = st.columns(3)
+    
+    total_despesas = df["valor"].sum() if not df.empty else 0.0
+    total_receitas = df_e["valor"].sum() if not df_e.empty else 0.0
+    saldo_final = total_receitas - total_despesas
+    total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
+    
+    c1.metric(f"📈 Receitas ({mes_sel})", f"R$ {total_receitas:,.2f}")
+    c2.metric(f"📉 Despesas ({mes_sel})", f"R$ {total_despesas:,.2f}")
+    c3.metric("⚖️ Saldo do Período", f"R$ {saldo_final:,.2f}", delta=f"Cartão: R$ {total_cartao:,.2f}", delta_color="inverse")
 
     if not df.empty:
-        st.divider()
-        c1, c2 = st.columns(2)
-        total_geral = df["valor"].sum()
-        total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum()
-        
-        txt_total = f"💰 Total ({familiar_filter})" if familiar_filter != "Todos" else f"💰 Total {mes_sel}"
-        c1.metric(txt_total, f"R$ {total_geral:,.2f}")
-        c2.metric("💳 Cartão no Período", f"R$ {total_cartao:,.2f}")
-
-        st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
+        st.subheader(f"Análise de Gastos: {mes_sel}/{ano_sel} - [{familiar_filter}]")
         resumo_cat = df.groupby("categoria")["valor"].sum()
         st.bar_chart(resumo_cat)
 
+        # Função Excel (Original)
         def gerar_excel_formatado(data_frame):
             output = BytesIO()
             df_export = data_frame[['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']].copy()
@@ -131,19 +163,20 @@ if not df_raw.empty:
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             st.download_button(
-                label=f"📥 Relatório {familiar_filter} (Excel)",
+                label=f"📥 Relatório Despesas {familiar_filter} (Excel)",
                 data=gerar_excel_formatado(df),
                 file_name=f"Financeiro_{familiar_filter}_{mes_sel}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         
         with col_b2:
-            if st.button("🗑️ Limpar Seleção", type="primary", use_container_width=True):
+            if st.button("🗑️ Limpar Despesas do Mês", type="primary", use_container_width=True):
                 for id_del in df['id'].tolist():
                     conn.table("controle_financeiro").delete().eq("id", id_del).execute()
                 st.rerun()
 
-        st.subheader(f"Histórico: {familiar_filter}")
+        # Histórico de Despesas (Original)
+        st.subheader(f"Histórico de Despesas: {familiar_filter}")
         h1, h2, h3, h4, h5, h6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
         h1.write("**Data**"); h2.write("**Descrição**"); h3.write("**Valor**"); h4.write("**Método**"); h5.write("**Familiar**"); h6.write("**Ação**")
         
@@ -154,9 +187,25 @@ if not df_raw.empty:
             r3.write(f"R$ {row['valor']:.2f}")
             r4.write(row['metodo'])
             r5.write(row['familiar'])
-            if r6.button("🗑️", key=f"del_{row['id']}"):
+            if r6.button("🗑️", key=f"del_d_{row['id']}"):
                 conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
                 st.rerun()
+
+        # Histórico de Entradas (Novo, seguindo o padrão da lixeira)
+        if not df_e.empty:
+            st.divider()
+            st.subheader(f"Histórico de Entradas: {familiar_filter}")
+            he1, he2, he3, he4, he5 = st.columns([1, 2, 1, 1.5, 0.5])
+            he1.write("**Data**"); he2.write("**Descrição**"); he3.write("**Valor**"); he4.write("**Origem**"); he5.write("**Ação**")
+            for _, row_e in df_e.iterrows():
+                re1, re2, re3, re4, re5 = st.columns([1, 2, 1, 1.5, 0.5])
+                re1.write(row_e['data_registro'])
+                re2.write(row_e['descricao'])
+                re3.write(f"R$ {row_e['valor']:.2f}")
+                re4.write(row_e['tipo_entrada'])
+                if re5.button("🗑️", key=f"del_e_{row_e['id']}"):
+                    conn.table("entradas_financeiras").delete().eq("id", row_e['id']).execute()
+                    st.rerun()
     else:
         st.info(f"Nenhum dado para {familiar_filter} em {mes_sel}/{ano_sel}.")
 else:
