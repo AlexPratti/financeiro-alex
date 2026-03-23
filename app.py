@@ -105,7 +105,7 @@ with tab_receitas:
         with ce1:
             valor_e = st.number_input("Valor Recebido (R$)", min_value=0.0, step=0.01, format="%.2f", key="input_valor_entrada")
         with ce2:
-            tipo_e = st.selectbox("Origem", ["Salário", "Adiantamento Salarial", "Serviços Autônomos", "Outros"])
+            tipo_e = st.selectbox("Origem", ["Salário", "Adiantamento Salarial", "Serviços Autônomos", "Pix Recebido", "Outros"])
         
         if st.form_submit_button("💰 Registrar Entrada"):
             if desc_e and valor_e > 0:
