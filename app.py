@@ -67,6 +67,29 @@ if not df_raw.empty:
     df_raw = df_raw.dropna(subset=['data_dt'])
     df_raw['Mes_PT'] = df_raw['data_dt'].dt.month.map(meses_trad)
     df_raw['Ano'] = df_raw['data_dt'].dt.year.astype(str)
+# ****************************************************************************************************************    
+# Filtros na Sidebar
+    st.sidebar.header("🔍 Filtros")
+    anos_list = sorted(df_raw['Ano'].unique(), reverse=True)
+    ano_sel = st.sidebar.selectbox("Ano", anos_list)
+    meses_ordem = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+    df_ano = df_raw[df_raw['Ano'] == ano_sel]
+    meses_disp = [m for m in meses_ordem if m in df_ano['Mes_PT'].unique()]
+    mes_sel = st.sidebar.selectbox("Mês", meses_disp)
+    fams_disp = ["Todos"] + sorted(df_raw['familiar'].unique().tolist())
+    familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
+
+    # Filtragem Final
+    df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
+    df_e = pd.DataFrame()
+    if not df_ent_raw.empty:
+        df_e = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)].copy()
+
+    if familiar_filter != "Todos":
+        df = df[df['familiar'] == familiar_filter]
+        if not df_e.empty:
+            df_e = df_e[df_e['familiar'] == familiar_filter]
+# ****************************************************************************************************************
 
 # --- FORMULÁRIOS DE ENTRADA ---
 st.subheader("📝 Novo Lançamento")
