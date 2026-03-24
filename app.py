@@ -118,18 +118,25 @@ with tab_receitas:
                 st.success("✅ Entrada Registrada!")
                 st.rerun()
 
-# --- FILTRAGEM DE DADOS PARA O DASHBOARD ---
+# --- FILTRAGEM DE DADOS NA SIDEBAR ---
 if not df_raw.empty:
     st.sidebar.header("🔍 Filtros")
     anos_list = sorted(df_raw['Ano'].unique(), reverse=True)
     ano_sel = st.sidebar.selectbox("Ano", anos_list)
+    
     meses_ordem = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
     df_ano = df_raw[df_raw['Ano'] == ano_sel]
     meses_disp = [m for m in meses_ordem if m in df_ano['Mes_PT'].unique()]
     mes_sel = st.sidebar.selectbox("Mês", meses_disp)
+    
     fams_disp = ["Todos"] + sorted(df_raw['familiar'].unique().tolist())
     familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
 
+    # --- NOVO: CONTROLE DE VISIBILIDADE ---
+    st.sidebar.divider()
+    mostrar_historico = st.sidebar.checkbox("Exibir Histórico Detalhado", value=True)
+
+    # Filtragem Final dos DataFrames
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
     df_e = pd.DataFrame()
     if not df_ent_raw.empty:
@@ -140,7 +147,7 @@ if not df_raw.empty:
         if not df_e.empty:
             df_e = df_e[df_e['familiar'] == familiar_filter]
 
-      # --- MÉTRICAS ---
+    # --- MÉTRICAS ---
     st.divider()
     c1, c2, c3 = st.columns(3)
     
@@ -176,40 +183,46 @@ if not df_raw.empty:
                     conn.table("controle_financeiro").delete().eq("id", id_del).execute()
                 st.rerun()
 
-        # --- REINSERIDO: Histórico de Despesas ---
-        st.subheader(f"Histórico de Despesas: {familiar_filter}")
-        h1, h2, h3, h4, h5, h6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
-        h1.write("**Data**"); h2.write("**Descrição**"); h3.write("**Valor**"); h4.write("**Método**"); h5.write("**Familiar**"); h6.write("**Ação**")
-        
-        for _, row in df.iterrows():
-            r1, r2, r3, r4, r5, r6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
-            r1.write(row['data_registro'])
-            r2.write(row['descricao'])
-            r3.write(f"R$ {row['valor']:.2f}")
-            r4.write(row['metodo'])
-            r5.write(row['familiar'])
-            if r6.button("🗑️", key=f"del_d_{row['id']}"):
-                conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
-                st.rerun()
-
-        # --- REINSERIDO: Histórico de Entradas ---
-        if not df_e.empty:
+        # --- EXIBIÇÃO CONDICIONAL DO HISTÓRICO ---
+        if mostrar_historico:
             st.divider()
-            st.subheader(f"Histórico de Entradas: {familiar_filter}")
-            he1, he2, he3, he4, he5 = st.columns([1, 2, 1, 1.5, 0.5])
-            he1.write("**Data**"); he2.write("**Descrição**"); he3.write("**Valor**"); he4.write("**Origem**"); he5.write("**Ação**")
-            for _, row_e in df_e.iterrows():
-                re1, re2, re3, re4, re5 = st.columns([1, 2, 1, 1.5, 0.5])
-                re1.write(row_e['data_registro'])
-                re2.write(row_e['descricao'])
-                re3.write(f"R$ {row_e['valor']:.2f}")
-                re4.write(row_e['tipo_entrada'])
-                if re5.button("🗑️", key=f"del_e_{row_e['id']}"):
-                    conn.table("entradas_financeiras").delete().eq("id", row_e['id']).execute()
+            # Histórico de Despesas
+            st.subheader(f"Histórico de Despesas: {familiar_filter}")
+            h1, h2, h3, h4, h5, h6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
+            h1.write("**Data**"); h2.write("**Descrição**"); h3.write("**Valor**"); h4.write("**Método**"); h5.write("**Familiar**"); h6.write("**Ação**")
+            
+            for _, row in df.iterrows():
+                r1, r2, r3, r4, r5, r6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
+                r1.write(row['data_registro'])
+                r2.write(row['descricao'])
+                r3.write(f"R$ {row['valor']:.2f}")
+                r4.write(row['metodo'])
+                r5.write(row['familiar'])
+                if r6.button("🗑️", key=f"del_d_{row['id']}"):
+                    conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
                     st.rerun()
+
+            # Histórico de Entradas
+            if not df_e.empty:
+                st.divider()
+                st.subheader(f"Histórico de Entradas: {familiar_filter}")
+                he1, he2, he3, he4, he5 = st.columns([1, 2, 1, 1.5, 0.5])
+                he1.write("**Data**"); he2.write("**Descrição**"); he3.write("**Valor**"); he4.write("**Origem**"); he5.write("**Ação**")
+                for _, row_e in df_e.iterrows():
+                    re1, re2, re3, re4, re5 = st.columns([1, 2, 1, 1.5, 0.5])
+                    re1.write(row_e['data_registro'])
+                    re2.write(row_e['descricao'])
+                    re3.write(f"R$ {row_e['valor']:.2f}")
+                    re4.write(row_e['tipo_entrada'])
+                    if re5.button("🗑️", key=f"del_e_{row_e['id']}"):
+                        conn.table("entradas_financeiras").delete().eq("id", row_e['id']).execute()
+                        st.rerun()
+        else:
+            st.info("💡 O histórico detalhado está oculto. Use a barra lateral para exibir.")
 else:
     st.info("Nenhum dado encontrado para os filtros selecionados.")
 
+# --- BOTÃO SAIR ---
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
     st.session_state["familiar_nome"] = ""
