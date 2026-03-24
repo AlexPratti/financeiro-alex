@@ -149,16 +149,36 @@ if not df_raw.empty:
 
     # --- MÉTRICAS ---
     st.divider()
-    c1, c2, c3 = st.columns(3)
     
-    total_despesas = df["valor"].sum() if not df.empty else 0.0
+    # Cálculos de Receitas (Mês Selecionado)
     total_receitas = df_e["valor"].sum() if not df_e.empty else 0.0
-    saldo_final = total_receitas - total_despesas
+    rec_merlim = df_e[df_e['familiar'] == 'Merlim']['valor'].sum() if not df_e.empty else 0.0
+    rec_pratti = df_e[df_e['familiar'] == 'Pratti']['valor'].sum() if not df_e.empty else 0.0
+
+    # Cálculos de Despesas (Mês Selecionado)
+    total_despesas = df["valor"].sum() if not df.empty else 0.0
+    desp_merlim = df[df['familiar'] == 'Merlim']['valor'].sum() if not df.empty else 0.0
+    desp_pratti = df[df['familiar'] == 'Pratti']['valor'].sum() if not df.empty else 0.0
+    
+    # Cálculos de Saldos Finais
+    saldo_merlim = rec_merlim - desp_merlim
+    saldo_pratti = rec_pratti - desp_pratti
+    saldo_total = total_receitas - total_despesas
+    
     total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
     
+    # Primeira Linha de Métricas: Resumo Geral do Mês
+    c1, c2, c3 = st.columns(3)
     c1.metric(f"📈 Receitas ({mes_sel})", f"R$ {total_receitas:,.2f}")
     c2.metric(f"📉 Despesas ({mes_sel})", f"R$ {total_despesas:,.2f}")
-    c3.metric("⚖️ Saldo do Período", f"R$ {saldo_final:,.2f}", delta=f"Cartão: R$ {total_cartao:,.2f}", delta_color="inverse")
+    c3.metric("⚖️ Saldo Total do Período", f"R$ {saldo_total:,.2f}", delta=f"Cartão: R$ {total_cartao:,.2f}", delta_color="inverse")
+
+    # Segunda Linha de Métricas: Saldos Individuais
+    st.write("---")
+    cs1, cs2, cs3 = st.columns(3)
+    cs1.metric("⚖️ Saldo (Merlim)", f"R$ {saldo_merlim:,.2f}")
+    cs2.metric("⚖️ Saldo (Pratti)", f"R$ {saldo_pratti:,.2f}")
+    cs3.metric("💰 Soma dos Saldos", f"R$ {saldo_total:,.2f}")
 
     if not df.empty:
         st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
