@@ -6,7 +6,7 @@ from datetime import datetime
 from streamlit_autorefresh import st_autorefresh
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(page_title="Finanças Alex", page_icon="💰", layout="wide")
+st.set_page_config(page_title="Finanças Familiar", page_icon="💰", layout="wide")
 
 # --- INICIALIZAÇÃO SEGURA DO ESTADO DA SESSÃO ---
 if "autenticado" not in st.session_state:
@@ -14,14 +14,14 @@ if "autenticado" not in st.session_state:
 if "familiar_nome" not in st.session_state:
     st.session_state["familiar_nome"] = ""
 
+# Puxa a lista de usuários dos Secrets de forma global
+usuarios_permitidos = st.secrets["USUARIOS_PERMITIDOS"]
+
 # --- VALIDAÇÃO DE USUÁRIO ---
 if not st.session_state["autenticado"]:
     st.title("🔐 Acesso ao Sistema")
     user_input = st.text_input("Informe seu usuário:").strip().capitalize()
     if st.button("Acessar"):
-        # Agora buscamos a lista de permitidos nos Secrets do App
-        usuarios_permitidos = st.secrets["USUARIOS_PERMITIDOS"]
-        
         if user_input.lower() in [u.lower() for u in usuarios_permitidos]:
             st.session_state["autenticado"] = True
             st.session_state["familiar_nome"] = user_input
@@ -29,7 +29,6 @@ if not st.session_state["autenticado"]:
         else:
             st.error("Usuário não autorizado.")
     st.stop()
-
 
 # --- ATUALIZAÇÃO AUTOMÁTICA (10 segundos) ---
 st_autorefresh(interval=10000, key="datarefresh")
@@ -40,18 +39,18 @@ conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["URL_SU
 st.sidebar.write(f"👤 Logado como: **{st.session_state['familiar_nome']}**")
 st.title("📊 Controle Financeiro Familiar")
 
-# --- BUSCA E FILTRAGEM DE DADOS (Movido para cima para usar nos formulários) ---
+# --- BUSCA E FILTRAGEM DE DADOS ---
 resp_desp = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
 resp_ent = conn.table("entradas_financeiras").select("*").order("created_at", desc=True).execute()
 
 df_raw = pd.DataFrame(resp_desp.data)
 df_ent_raw = pd.DataFrame(resp_ent.data)
 
-# Processamento inicial de datas para métricas rápidas
 meses_trad = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
-total_receitas_mes = 0.0
-receita_merlim = 0.0
-receita_pratti = 0.0
+
+# Inicializa dicionário de receitas por usuário dinamicamente
+receitas_atuais_usuarios = {u: 0.0 for u in usuarios_permitidos}
+total_receitas_mes_atual = 0.0
 
 if not df_ent_raw.empty:
     df_ent_raw['data_dt'] = pd.to_datetime(df_ent_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
@@ -59,12 +58,12 @@ if not df_ent_raw.empty:
     df_ent_raw['Mes_PT'] = df_ent_raw['data_dt'].dt.month.map(meses_trad)
     df_ent_raw['Ano'] = df_ent_raw['data_dt'].dt.year.astype(str)
     
-    # Cálculo para exibição nos formulários (Mês/Ano atual)
     hoje = datetime.now()
     df_ent_atual = df_ent_raw[(df_ent_raw['Mes_PT'] == meses_trad[hoje.month]) & (df_ent_raw['Ano'] == str(hoje.year))]
-    total_receitas_mes = df_ent_atual['valor'].sum()
-    receita_merlim = df_ent_atual[df_ent_atual['familiar'] == 'Merlim']['valor'].sum()
-    receita_pratti = df_ent_atual[df_ent_atual['familiar'] == 'Pratti']['valor'].sum()
+    total_receitas_mes_atual = df_ent_atual['valor'].sum()
+    
+    for u in usuarios_permitidos:
+        receitas_atuais_usuarios[u] = df_ent_atual[df_ent_atual['familiar'] == u]['valor'].sum()
 
 if not df_raw.empty:
     df_raw['data_dt'] = pd.to_datetime(df_raw['data_registro'], format='%d/%m/%Y', errors='coerce')
@@ -77,7 +76,7 @@ st.subheader("📝 Novo Lançamento")
 tab_gastos, tab_receitas = st.tabs(["💸 Registrar Despesa", "📈 Registrar Saldo/Entrada"])
 
 with tab_gastos:
-    st.info(f"💰 **Receitas Totais do Mês Atual:** R$ {total_receitas_mes:,.2f}")
+    st.info(f"💰 **Receitas Totais do Mês Atual:** R$ {total_receitas_mes_atual:,.2f}")
     with st.form("form_despesa", clear_on_submit=True):
         desc = st.text_input("Descrição da Despesa")
         c1, c2 = st.columns(2)
@@ -99,9 +98,10 @@ with tab_gastos:
                 st.rerun()
 
 with tab_receitas:
-    col_m, col_p = st.columns(2)
-    col_m.metric("Entradas Merlim (Mês)", f"R$ {receita_merlim:,.2f}")
-    col_p.metric("Entradas Pratti (Mês)", f"R$ {receita_pratti:,.2f}")
+    # Exibição dinâmica das métricas de entrada por usuário
+    cols_rec = st.columns(len(usuarios_permitidos))
+    for i, u in enumerate(usuarios_permitidos):
+        cols_rec[i].metric(f"Entradas {u} (Mês)", f"R$ {receitas_atuais_usuarios[u]:,.2f}")
     
     with st.form("form_entrada", clear_on_submit=True):
         desc_e = st.text_input("Descrição da Receita (Ex: Salário)")
@@ -133,14 +133,12 @@ if not df_raw.empty:
     meses_disp = [m for m in meses_ordem if m in df_ano['Mes_PT'].unique()]
     mes_sel = st.sidebar.selectbox("Mês", meses_disp)
     
-    fams_disp = ["Todos"] + sorted(df_raw['familiar'].unique().tolist())
+    fams_disp = ["Todos"] + sorted(list(set(usuarios_permitidos) | set(df_raw['familiar'].unique())))
     familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
 
-    # --- NOVO: CONTROLE DE VISIBILIDADE ---
     st.sidebar.divider()
     mostrar_historico = st.sidebar.checkbox("Exibir Histórico Detalhado", value=True)
 
-    # Filtragem Final dos DataFrames
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
     df_e = pd.DataFrame()
     if not df_ent_raw.empty:
@@ -150,39 +148,30 @@ if not df_raw.empty:
         df = df[df['familiar'] == familiar_filter]
         if not df_e.empty:
             df_e = df_e[df_e['familiar'] == familiar_filter]
-
-    # --- MÉTRICAS ---
+    # --- MÉTRICAS DINÂMICAS ---
     st.divider()
     
-    # Cálculos de Receitas (Mês Selecionado)
     total_receitas = df_e["valor"].sum() if not df_e.empty else 0.0
-    rec_merlim = df_e[df_e['familiar'] == 'Merlim']['valor'].sum() if not df_e.empty else 0.0
-    rec_pratti = df_e[df_e['familiar'] == 'Pratti']['valor'].sum() if not df_e.empty else 0.0
-
-    # Cálculos de Despesas (Mês Selecionado)
     total_despesas = df["valor"].sum() if not df.empty else 0.0
-    desp_merlim = df[df['familiar'] == 'Merlim']['valor'].sum() if not df.empty else 0.0
-    desp_pratti = df[df['familiar'] == 'Pratti']['valor'].sum() if not df.empty else 0.0
-    
-    # Cálculos de Saldos Finais
-    saldo_merlim = rec_merlim - desp_merlim
-    saldo_pratti = rec_pratti - desp_pratti
     saldo_total = total_receitas - total_despesas
-    
     total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
     
-    # Primeira Linha de Métricas: Resumo Geral do Mês
+    # Primeira Linha: Resumo Geral
     c1, c2, c3 = st.columns(3)
     c1.metric(f"📈 Receitas ({mes_sel})", f"R$ {total_receitas:,.2f}")
     c2.metric(f"📉 Despesas ({mes_sel})", f"R$ {total_despesas:,.2f}")
-    c3.metric("⚖️ Saldo Total do Período", f"R$ {saldo_total:,.2f}", delta=f"Cartão: R$ {total_cartao:,.2f}", delta_color="inverse")
+    c3.metric("⚖️ Saldo Período", f"R$ {saldo_total:,.2f}", delta=f"Cartão: R$ {total_cartao:,.2f}", delta_color="inverse")
 
-    # Segunda Linha de Métricas: Saldos Individuais
     st.write("---")
-    cs1, cs2, cs3 = st.columns(3)
-    cs1.metric("⚖️ Saldo (Merlim)", f"R$ {saldo_merlim:,.2f}")
-    cs2.metric("⚖️ Saldo (Pratti)", f"R$ {saldo_pratti:,.2f}")
-    cs3.metric("💰 Soma dos Saldos", f"R$ {saldo_total:,.2f}")
+    # Segunda Linha: Saldos Individuais Baseados nos Usuários do Secrets
+    cols_individual = st.columns(len(usuarios_permitidos) + 1)
+    
+    for i, u in enumerate(usuarios_permitidos):
+        rec_u = df_e[df_e['familiar'] == u]['valor'].sum() if not df_e.empty else 0.0
+        desp_u = df[df['familiar'] == u]['valor'].sum() if not df.empty else 0.0
+        cols_individual[i].metric(f"⚖️ Saldo ({u})", f"R$ {(rec_u - desp_u):,.2f}")
+    
+    cols_individual[-1].metric("💰 Soma dos Saldos", f"R$ {saldo_total:,.2f}")
 
     if not df.empty:
         st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
@@ -200,53 +189,50 @@ if not df_raw.empty:
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             st.download_button(label="📥 Baixar Dados (Excel)", data=excel_data, file_name=f"financas_{mes_sel}.xlsx")
-        
         with col_b2:
             if st.button("🗑️ Limpar Despesas do Mês", type="primary", use_container_width=True):
                 for id_del in df['id'].tolist():
                     conn.table("controle_financeiro").delete().eq("id", id_del).execute()
                 st.rerun()
 
-        # --- EXIBIÇÃO CONDICIONAL DO HISTÓRICO ---
         if mostrar_historico:
             st.divider()
-            # Histórico de Despesas
             st.subheader(f"Histórico de Despesas: {familiar_filter}")
-            h1, h2, h3, h4, h5, h6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
-            h1.write("**Data**"); h2.write("**Descrição**"); h3.write("**Valor**"); h4.write("**Método**"); h5.write("**Familiar**"); h6.write("**Ação**")
+            h = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
+            headers = ["**Data**", "**Descrição**", "**Valor**", "**Método**", "**Familiar**", "**Ação**"]
+            for col, text in zip(h, headers): col.write(text)
             
             for _, row in df.iterrows():
-                r1, r2, r3, r4, r5, r6 = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
-                r1.write(row['data_registro'])
-                r2.write(row['descricao'])
-                r3.write(f"R$ {row['valor']:.2f}")
-                r4.write(row['metodo'])
-                r5.write(row['familiar'])
-                if r6.button("🗑️", key=f"del_d_{row['id']}"):
+                r = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
+                r[0].write(row['data_registro'])
+                r[1].write(row['descricao'])
+                r[2].write(f"R$ {row['valor']:.2f}")
+                r[3].write(row['metodo'])
+                r[4].write(row['familiar'])
+                if r[5].button("🗑️", key=f"del_d_{row['id']}"):
                     conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
                     st.rerun()
 
-            # Histórico de Entradas
             if not df_e.empty:
                 st.divider()
                 st.subheader(f"Histórico de Entradas: {familiar_filter}")
-                he1, he2, he3, he4, he5 = st.columns([1, 2, 1, 1.5, 0.5])
-                he1.write("**Data**"); he2.write("**Descrição**"); he3.write("**Valor**"); he4.write("**Origem**"); he5.write("**Ação**")
+                he = st.columns([1, 2, 1, 1.5, 0.5])
+                h_ent = ["**Data**", "**Descrição**", "**Valor**", "**Origem**", "**Ação**"]
+                for col, text in zip(he, h_ent): col.write(text)
                 for _, row_e in df_e.iterrows():
-                    re1, re2, re3, re4, re5 = st.columns([1, 2, 1, 1.5, 0.5])
-                    re1.write(row_e['data_registro'])
-                    re2.write(row_e['descricao'])
-                    re3.write(f"R$ {row_e['valor']:.2f}")
-                    re4.write(row_e['tipo_entrada'])
-                    if re5.button("🗑️", key=f"del_e_{row_e['id']}"):
+                    re = st.columns([1, 2, 1, 1.5, 0.5])
+                    re[0].write(row_e['data_registro'])
+                    re[1].write(row_e['descricao'])
+                    re[2].write(f"R$ {row_e['valor']:.2f}")
+                    re[3].write(row_e['tipo_entrada'])
+                    if re[4].button("🗑️", key=f"del_e_{row_e['id']}"):
                         conn.table("entradas_financeiras").delete().eq("id", row_e['id']).execute()
                         st.rerun()
         else:
-            st.info("💡 O histórico detalhado está oculto. Use a barra lateral para exibir.")
+            st.info("💡 O histórico detalhado está oculto.")
 else:
     st.info("Nenhum dado encontrado para os filtros selecionados.")
 
-# --- BOTÃO SAIR ---
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
     st.session_state["familiar_nome"] = ""
