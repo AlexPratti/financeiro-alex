@@ -19,13 +19,17 @@ if not st.session_state["autenticado"]:
     st.title("🔐 Acesso ao Sistema")
     user_input = st.text_input("Informe seu usuário:").strip().capitalize()
     if st.button("Acessar"):
-        if user_input.lower() in ["merlim", "pratti"]:
+        # Agora buscamos a lista de permitidos nos Secrets do App
+        usuarios_permitidos = st.secrets["USUARIOS_PERMITIDOS"]
+        
+        if user_input.lower() in [u.lower() for u in usuarios_permitidos]:
             st.session_state["autenticado"] = True
             st.session_state["familiar_nome"] = user_input
             st.rerun()
         else:
             st.error("Usuário não autorizado.")
     st.stop()
+
 
 # --- ATUALIZAÇÃO AUTOMÁTICA (10 segundos) ---
 st_autorefresh(interval=10000, key="datarefresh")
