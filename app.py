@@ -1,6 +1,7 @@
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
 import pandas as pd
+import pytz
 from io import BytesIO
 from datetime import datetime, timedelta
 from streamlit_autorefresh import st_autorefresh
@@ -96,9 +97,16 @@ with tab_gastos:
                 id_card_vinculo = dict_cartoes.get(metodo_escolhido)
                 metodo_final = "Cartão de Crédito" if id_card_vinculo else metodo_escolhido
                 
+                # Ajuste de Fuso Horário Brasil
+                fuso_br = pytz.timezone('America/Sao_Paulo')
+                data_hoje_br = datetime.now(fuso_br).strftime("%d/%m/%Y")
+                
                 nova_linha = {
-                    "data_registro": datetime.now().strftime("%d/%m/%Y"),
-                    "descricao": desc, "valor": valor, "categoria": cat, "metodo": metodo_final,
+                    "data_registro": data_hoje_br,
+                    "descricao": desc, 
+                    "valor": valor, 
+                    "categoria": cat, 
+                    "metodo": metodo_final,
                     "familiar": st.session_state["familiar_nome"],
                     "id_vinc_cartao": id_card_vinculo
                 }
@@ -121,9 +129,15 @@ with tab_receitas:
         
         if st.form_submit_button("💰 Registrar Entrada"):
             if desc_e and valor_e > 0:
+                # Ajuste de Fuso Horário Brasil
+                fuso_br = pytz.timezone('America/Sao_Paulo')
+                data_hoje_br = datetime.now(fuso_br).strftime("%d/%m/%Y")
+                
                 nova_entrada = {
-                    "data_registro": datetime.now().strftime("%d/%m/%Y"),
-                    "descricao": desc_e, "valor": valor_e, "tipo_entrada": tipo_e,
+                    "data_registro": data_hoje_br,
+                    "descricao": desc_e, 
+                    "valor": valor_e, 
+                    "tipo_entrada": tipo_e,
                     "familiar": st.session_state["familiar_nome"]
                 }
                 conn.table("entradas_financeiras").insert(nova_entrada).execute()
