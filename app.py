@@ -275,27 +275,40 @@ if not df_raw.empty:
     st.info(f"💳 **Info Cartões:** Em Aberto (Futuro): R$ {valor_em_aberto_cartao:,.2f} | Quitado (No mês): R$ {valor_quitado_cartao:,.2f} | Total: R$ {total_cartao_bruto:,.2f}")
 
     st.write("---")
-    # Saldos Individuais (Mantendo Integridade Original)
+    # Saldos Individuais com Tratamento de Erro
     cols_individual = st.columns(len(usuarios_permitidos) + 1)
     for i, u in enumerate(usuarios_permitidos):
         rec_u = df_e[df_e['familiar'] == u]['valor'].sum() if not df_e.empty else 0.0
         desp_u_efetiva = 0.0
         df_u = df[df['familiar'] == u]
+        
         for _, r_u in df_u.iterrows():
             if r_u['metodo'] != "Cartão de Crédito":
                 desp_u_efetiva += r_u['valor']
             else:
+                # Busca informação do cartão vinculado
                 v_info_u = df_cards_config[df_cards_config['id'] == r_u['id_vinc_cartao']]
-                v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
+                
+                # CORREÇÃO: Garante que v_dia_u tenha um valor padrão (ex: 28) se o cartão não for encontrado
+                if not v_info_u.empty:
+                    v_dia_u = int(v_info_u['dia_vencimento'].iloc[0])
+                else:
+                    v_dia_u = 28 # Valor padrão de segurança
+                
                 dia_f_u = v_dia_u - 7
+                if dia_f_u <= 0: dia_f_u = 1
+                
                 data_c_u = pd.to_datetime(r_u['data_registro'], format='%d/%m/%Y')
                 
-                if data_c_u.day < (v_dia_u - 7):
+                # Lógica de vencimento para saldo individual
+                if data_c_u.day < dia_f_u:
                     if not (hoje_dt.month == data_c_u.month and hoje_dt.day < v_dia_u):
                         desp_u_efetiva += r_u['valor']
+        
         cols_individual[i].metric(f"⚖️ Saldo ({u})", f"R$ {(rec_u - desp_u_efetiva):,.2f}")
     
     cols_individual[-1].metric("💰 Soma dos Saldos", f"R$ {saldo_total_real:,.2f}")
+
 
     if not df.empty:
         st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
