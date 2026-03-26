@@ -42,7 +42,6 @@ st.title("📊 Controle Financeiro Familiar")
 # --- BUSCA E FILTRAGEM DE DADOS ---
 resp_desp = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
 resp_ent = conn.table("entradas_financeiras").select("*").order("created_at", desc=True).execute()
-# Busca dos novos cartões
 resp_cards = conn.table("gestao_cartoes_vinc").select("*").execute()
 
 df_raw = pd.DataFrame(resp_desp.data)
@@ -76,7 +75,6 @@ if not df_raw.empty:
 
 # --- FORMULÁRIOS DE ENTRADA ---
 st.subheader("📝 Novo Lançamento")
-# Adicionada a aba de cartões conforme solicitado
 tab_gastos, tab_receitas, tab_gestao_cartoes = st.tabs(["💸 Registrar Despesa", "📈 Registrar Saldo/Entrada", "💳 Gestão de Cartões"])
 
 with tab_gastos:
@@ -88,25 +86,22 @@ with tab_gastos:
             valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f", key="input_valor_despesa")
             cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
         with c2:
-            metodo = st.selectbox("Método", ["Dinheiro/Pix", "Cartão de Crédito", "Cartão de Débito"])
-            
-            # Seleção dinâmica de cartão se for Crédito
-            id_card_vinc = None
-            if metodo == "Cartão de Crédito":
-                if not df_cards_config.empty:
-                    opcoes_c = {f"{r['banco_nome']} ({r['apelido_cartao']})": r['id'] for _, r in df_cards_config.iterrows()}
-                    escolha_c = st.selectbox("Selecione o Cartão", list(opcoes_c.keys()))
-                    id_card_vinc = opcoes_c[escolha_c]
-                else:
-                    st.warning("⚠️ Cadastre um cartão na aba ao lado!")
+            # Lista dinâmica de métodos conforme solicitado
+            metodos_fixos = ["Dinheiro/Pix", "Cartão de Débito"]
+            dict_cartoes = {row['apelido_cartao']: row['id'] for _, row in df_cards_config.iterrows()} if not df_cards_config.empty else {}
+            opcoes_metodo = metodos_fixos + list(dict_cartoes.keys())
+            metodo_escolhido = st.selectbox("Método de Pagamento", opcoes_metodo)
         
         if st.form_submit_button("🚀 Registrar Despesa"):
             if desc and valor > 0:
+                id_card_vinculo = dict_cartoes.get(metodo_escolhido)
+                metodo_final = "Cartão de Crédito" if id_card_vinculo else metodo_escolhido
+                
                 nova_linha = {
                     "data_registro": datetime.now().strftime("%d/%m/%Y"),
-                    "descricao": desc, "valor": valor, "categoria": cat, "metodo": metodo,
+                    "descricao": desc, "valor": valor, "categoria": cat, "metodo": metodo_final,
                     "familiar": st.session_state["familiar_nome"],
-                    "id_vinc_cartao": id_card_vinc # Novo vínculo
+                    "id_vinc_cartao": id_card_vinculo
                 }
                 conn.table("controle_financeiro").insert(nova_linha).execute()
                 st.success("✅ Despesa Registrada!")
@@ -152,7 +147,7 @@ with tab_gestao_cartoes:
     if not df_cards_config.empty:
         st.divider()
         for _, c_row in df_cards_config.iterrows():
-            col_a, col_b = st.columns([4, 1])
+            col_a, col_b = st.columns([3, 1])
             col_a.write(f"💳 **{c_row['banco_nome']}** - {c_row['apelido_cartao']} (Vencimento dia {c_row['dia_vencimento']})")
             if col_b.button("🗑️ Excluir", key=f"del_c_{c_row['id']}"):
                 conn.table("gestao_cartoes_vinc").delete().eq("id", c_row['id']).execute()
@@ -176,59 +171,48 @@ if not df_raw.empty:
     mostrar_historico = st.sidebar.checkbox("Exibir Histórico Detalhado", value=True)
 
     df = df_ano[df_ano['Mes_PT'] == mes_sel].copy()
-    df_e = pd.DataFrame()
-    if not df_ent_raw.empty:
-        df_e = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)].copy()
+    df_e = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)].copy() if not df_ent_raw.empty else pd.DataFrame()
 
     if familiar_filter != "Todos":
         df = df[df['familiar'] == familiar_filter]
         if not df_e.empty:
             df_e = df_e[df_e['familiar'] == familiar_filter]
 
-    # --- LÓGICA DE CÁLCULO DE SALDO COM CARTÕES ---
+    # --- MÉTRICAS DINÂMICAS COM LÓGICA DE VENCIMENTO ---
     hoje_dia = datetime.now().day
     total_receitas = df_e["valor"].sum() if not df_e.empty else 0.0
     
-    # Valores para métricas de cartão
     valor_em_aberto_cartao = 0.0
     valor_quitado_cartao = 0.0
-    total_despesas_efetivas = 0.0 # O que realmente sai do saldo
+    total_despesas_efetivas = 0.0 
 
-    if not df.empty:
-        for _, row in df.iterrows():
-            if row['metodo'] == "Cartão de Crédito":
-                # Busca o vencimento do cartão vinculado
-                v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
-                v_dia = v_info['dia_vencimento'].values[0] if not v_info.empty else 32
-                
-                if hoje_dia < v_dia:
-                    valor_em_aberto_cartao += row['valor']
-                else:
-                    valor_quitado_cartao += row['valor']
-                    total_despesas_efetivas += row['valor']
+    for _, row in df.iterrows():
+        if row['metodo'] == "Cartão de Crédito":
+            v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
+            v_dia = v_info['dia_vencimento'].values[0] if not v_info.empty else 32
+            if hoje_dia < v_dia:
+                valor_em_aberto_cartao += row['valor']
             else:
-                # Pix e Débito deduzem sempre
+                valor_quitado_cartao += row['valor']
                 total_despesas_efetivas += row['valor']
+        else:
+            total_despesas_efetivas += row['valor']
 
     saldo_total_real = total_receitas - total_despesas_efetivas
-    total_cartao_mes = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
+    total_cartao_bruto = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
     
-    # --- MÉTRICAS DINÂMICAS ---
     st.divider()
     c1, c2, c3 = st.columns(3)
     c1.metric(f"📈 Receitas ({mes_sel})", f"R$ {total_receitas:,.2f}")
     c2.metric(f"📉 Despesas Realizadas", f"R$ {total_despesas_efetivas:,.2f}", help="Soma de Pix/Débito + Cartões já vencidos.")
     c3.metric("⚖️ Saldo Real Atual", f"R$ {saldo_total_real:,.2f}")
 
-    # Nova linha de informação de cartão solicitada
-    st.info(f"💳 **Info Cartões:** Em Aberto (Futuro): R$ {valor_em_aberto_cartao:,.2f} | Quitado (Já deduzido): R$ {valor_quitado_cartao:,.2f} | Total Geral no Cartão: R$ {total_cartao_mes:,.2f}")
+    st.info(f"💳 **Info Cartões:** Em Aberto (Futuro): R$ {valor_em_aberto_cartao:,.2f} | Quitado (No mês): R$ {valor_quitado_cartao:,.2f} | Total: R$ {total_cartao_bruto:,.2f}")
 
     st.write("---")
-    # Segunda Linha: Saldos Individuais
     cols_individual = st.columns(len(usuarios_permitidos) + 1)
     for i, u in enumerate(usuarios_permitidos):
         rec_u = df_e[df_e['familiar'] == u]['valor'].sum() if not df_e.empty else 0.0
-        # Cálculo de despesa efetiva individual
         desp_u_efetiva = 0.0
         df_u = df[df['familiar'] == u]
         for _, r_u in df_u.iterrows():
@@ -239,15 +223,13 @@ if not df_raw.empty:
                 v_dia_u = v_info_u['dia_vencimento'].values[0] if not v_info_u.empty else 32
                 if hoje_dia >= v_dia_u:
                     desp_u_efetiva += r_u['valor']
-        
         cols_individual[i].metric(f"⚖️ Saldo ({u})", f"R$ {(rec_u - desp_u_efetiva):,.2f}")
     
     cols_individual[-1].metric("💰 Soma dos Saldos", f"R$ {saldo_total_real:,.2f}")
 
     if not df.empty:
         st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
-        resumo_cat = df.groupby("categoria")["valor"].sum()
-        st.bar_chart(resumo_cat)
+        st.bar_chart(df.groupby("categoria")["valor"].sum())
 
         def gerar_excel(data_frame):
             output = BytesIO()
@@ -255,11 +237,9 @@ if not df_raw.empty:
                 data_frame.to_excel(writer, index=False, sheet_name='Lançamentos')
             return output.getvalue()
 
-        excel_data = gerar_excel(df)
-        
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            st.download_button(label="📥 Baixar Dados (Excel)", data=excel_data, file_name=f"financas_{mes_sel}.xlsx")
+            st.download_button(label="📥 Baixar Dados (Excel)", data=gerar_excel(df), file_name=f"financas_{mes_sel}.xlsx")
         with col_b2:
             if st.button("🗑️ Limpar Despesas do Mês", type="primary", use_container_width=True):
                 for id_del in df['id'].tolist():
@@ -269,16 +249,22 @@ if not df_raw.empty:
         if mostrar_historico:
             st.divider()
             st.subheader(f"Histórico de Despesas: {familiar_filter}")
-            h = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
-            headers = ["**Data**", "**Descrição**", "**Valor**", "**Método**", "**Familiar**", "**Ação**"]
-            for col, text in zip(h, headers): col.write(text)
+            h = st.columns([1, 1.5, 1, 1.5, 1, 0.5])
+            for col, text in zip(h, ["**Data**", "**Descrição**", "**Valor**", "**Método**", "**Familiar**", "**Ação**"]): col.write(text)
             
             for _, row in df.iterrows():
-                r = st.columns([1, 1.5, 1, 1.2, 1, 0.5])
+                r = st.columns([1, 1.5, 1, 1.5, 1, 0.5])
                 r[0].write(row['data_registro'])
                 r[1].write(row['descricao'])
                 r[2].write(f"R$ {row['valor']:.2f}")
-                r[3].write(row['metodo'])
+                
+                # Exibe o apelido do cartão no histórico
+                metodo_txt = row['metodo']
+                if row['metodo'] == "Cartão de Crédito":
+                    v_label = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
+                    if not v_label.empty: metodo_txt = f"💳 {v_label['apelido_cartao'].values[0]}"
+                
+                r[3].write(metodo_txt)
                 r[4].write(row['familiar'])
                 if r[5].button("🗑️", key=f"del_d_{row['id']}"):
                     conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
@@ -288,8 +274,7 @@ if not df_raw.empty:
                 st.divider()
                 st.subheader(f"Histórico de Entradas: {familiar_filter}")
                 he = st.columns([1, 2, 1, 1.5, 0.5])
-                h_ent = ["**Data**", "**Descrição**", "**Valor**", "**Origem**", "**Ação**"]
-                for col, text in zip(he, h_ent): col.write(text)
+                for col, text in zip(he, ["**Data**", "**Descrição**", "**Valor**", "**Origem**", "**Ação**"]): col.write(text)
                 for _, row_e in df_e.iterrows():
                     re = st.columns([1, 2, 1, 1.5, 0.5])
                     re[0].write(row_e['data_registro'])
@@ -299,10 +284,8 @@ if not df_raw.empty:
                     if re[4].button("🗑️", key=f"del_e_{row_e['id']}"):
                         conn.table("entradas_financeiras").delete().eq("id", row_e['id']).execute()
                         st.rerun()
-        else:
-            st.info("💡 O histórico detalhado está oculto.")
 else:
-    st.info("Nenhum dado encontrado para os filtros selecionados.")
+    st.info("Nenhum dado encontrado.")
 
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
