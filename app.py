@@ -146,7 +146,7 @@ with tab_gestao_cartoes:
     if not df_cards_config.empty:
         st.divider()
         for _, c_row in df_cards_config.iterrows():
-            col_a, col_b = st.columns()
+            col_a, col_b = st.columns([4, 1])
             col_a.write(f"💳 **{c_row['banco_nome']}** - {c_row['apelido_cartao']} (Vencimento dia {c_row['dia_vencimento']})")
             if col_b.button("🗑️ Excluir", key=f"del_c_{c_row['id']}"):
                 conn.table("gestao_cartoes_vinc").delete().eq("id", c_row['id']).execute()
@@ -234,7 +234,7 @@ if not df_raw.empty:
                 desp_u_efetiva += r_u['valor']
             else:
                 v_info_u = df_cards_config[df_cards_config['id'] == r_u['id_vinc_cartao']]
-                v_dia_u = v_info_u['dia_vencimento'].values[0] if not v_info_u.empty else 32
+                v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
                 dia_f_u = v_dia_u - 7
                 data_c_u = pd.to_datetime(r_u['data_registro'], format='%d/%m/%Y')
                 
