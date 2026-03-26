@@ -42,9 +42,12 @@ st.title("📊 Controle Financeiro Familiar")
 # --- BUSCA E FILTRAGEM DE DADOS ---
 resp_desp = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
 resp_ent = conn.table("entradas_financeiras").select("*").order("created_at", desc=True).execute()
+# Busca dos novos cartões
+resp_cards = conn.table("gestao_cartoes_vinc").select("*").execute()
 
 df_raw = pd.DataFrame(resp_desp.data)
 df_ent_raw = pd.DataFrame(resp_ent.data)
+df_cards_config = pd.DataFrame(resp_cards.data)
 
 meses_trad = {1:'Janeiro', 2:'Fevereiro', 3:'Março', 4:'Abril', 5:'Maio', 6:'Junho', 7:'Julho', 8:'Agosto', 9:'Setembro', 10:'Outubro', 11:'Novembro', 12:'Dezembro'}
 
@@ -73,7 +76,8 @@ if not df_raw.empty:
 
 # --- FORMULÁRIOS DE ENTRADA ---
 st.subheader("📝 Novo Lançamento")
-tab_gastos, tab_receitas = st.tabs(["💸 Registrar Despesa", "📈 Registrar Saldo/Entrada"])
+# Adicionada a aba de cartões conforme solicitado
+tab_gastos, tab_receitas, tab_gestao_cartoes = st.tabs(["💸 Registrar Despesa", "📈 Registrar Saldo/Entrada", "💳 Gestão de Cartões"])
 
 with tab_gastos:
     st.info(f"💰 **Receitas Totais do Mês Atual:** R$ {total_receitas_mes_atual:,.2f}")
@@ -85,20 +89,30 @@ with tab_gastos:
             cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
         with c2:
             metodo = st.selectbox("Método", ["Dinheiro/Pix", "Cartão de Crédito", "Cartão de Débito"])
+            
+            # Seleção dinâmica de cartão se for Crédito
+            id_card_vinc = None
+            if metodo == "Cartão de Crédito":
+                if not df_cards_config.empty:
+                    opcoes_c = {f"{r['banco_nome']} ({r['apelido_cartao']})": r['id'] for _, r in df_cards_config.iterrows()}
+                    escolha_c = st.selectbox("Selecione o Cartão", list(opcoes_c.keys()))
+                    id_card_vinc = opcoes_c[escolha_c]
+                else:
+                    st.warning("⚠️ Cadastre um cartão na aba ao lado!")
         
         if st.form_submit_button("🚀 Registrar Despesa"):
             if desc and valor > 0:
                 nova_linha = {
                     "data_registro": datetime.now().strftime("%d/%m/%Y"),
                     "descricao": desc, "valor": valor, "categoria": cat, "metodo": metodo,
-                    "familiar": st.session_state["familiar_nome"]
+                    "familiar": st.session_state["familiar_nome"],
+                    "id_vinc_cartao": id_card_vinc # Novo vínculo
                 }
                 conn.table("controle_financeiro").insert(nova_linha).execute()
                 st.success("✅ Despesa Registrada!")
                 st.rerun()
 
 with tab_receitas:
-    # Exibição dinâmica das métricas de entrada por usuário
     cols_rec = st.columns(len(usuarios_permitidos))
     for i, u in enumerate(usuarios_permitidos):
         cols_rec[i].metric(f"Entradas {u} (Mês)", f"R$ {receitas_atuais_usuarios[u]:,.2f}")
@@ -120,6 +134,28 @@ with tab_receitas:
                 }
                 conn.table("entradas_financeiras").insert(nova_entrada).execute()
                 st.success("✅ Entrada Registrada!")
+                st.rerun()
+
+with tab_gestao_cartoes:
+    st.subheader("⚙️ Configurar Cartões de Crédito")
+    with st.form("form_novo_cartao", clear_on_submit=True):
+        f1, f2, f3 = st.columns(3)
+        b_nome = f1.text_input("Nome do Banco")
+        b_apelido = f2.text_input("Apelido/Identificador (Ex: Final 1234)")
+        b_venc = f3.number_input("Dia do Vencimento", 1, 31, 10)
+        if st.form_submit_button("Salvar Cartão"):
+            if b_nome and b_apelido:
+                conn.table("gestao_cartoes_vinc").insert({"banco_nome": b_nome, "apelido_cartao": b_apelido, "dia_vencimento": b_venc}).execute()
+                st.success("Cartão cadastrado!")
+                st.rerun()
+    
+    if not df_cards_config.empty:
+        st.divider()
+        for _, c_row in df_cards_config.iterrows():
+            col_a, col_b = st.columns([4, 1])
+            col_a.write(f"💳 **{c_row['banco_nome']}** - {c_row['apelido_cartao']} (Vencimento dia {c_row['dia_vencimento']})")
+            if col_b.button("🗑️ Excluir", key=f"del_c_{c_row['id']}"):
+                conn.table("gestao_cartoes_vinc").delete().eq("id", c_row['id']).execute()
                 st.rerun()
 
 # --- FILTRAGEM DE DADOS NA SIDEBAR ---
@@ -148,30 +184,65 @@ if not df_raw.empty:
         df = df[df['familiar'] == familiar_filter]
         if not df_e.empty:
             df_e = df_e[df_e['familiar'] == familiar_filter]
+
+    # --- LÓGICA DE CÁLCULO DE SALDO COM CARTÕES ---
+    hoje_dia = datetime.now().day
+    total_receitas = df_e["valor"].sum() if not df_e.empty else 0.0
+    
+    # Valores para métricas de cartão
+    valor_em_aberto_cartao = 0.0
+    valor_quitado_cartao = 0.0
+    total_despesas_efetivas = 0.0 # O que realmente sai do saldo
+
+    if not df.empty:
+        for _, row in df.iterrows():
+            if row['metodo'] == "Cartão de Crédito":
+                # Busca o vencimento do cartão vinculado
+                v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
+                v_dia = v_info['dia_vencimento'].values[0] if not v_info.empty else 32
+                
+                if hoje_dia < v_dia:
+                    valor_em_aberto_cartao += row['valor']
+                else:
+                    valor_quitado_cartao += row['valor']
+                    total_despesas_efetivas += row['valor']
+            else:
+                # Pix e Débito deduzem sempre
+                total_despesas_efetivas += row['valor']
+
+    saldo_total_real = total_receitas - total_despesas_efetivas
+    total_cartao_mes = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
+    
     # --- MÉTRICAS DINÂMICAS ---
     st.divider()
-    
-    total_receitas = df_e["valor"].sum() if not df_e.empty else 0.0
-    total_despesas = df["valor"].sum() if not df.empty else 0.0
-    saldo_total = total_receitas - total_despesas
-    total_cartao = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
-    
-    # Primeira Linha: Resumo Geral
     c1, c2, c3 = st.columns(3)
     c1.metric(f"📈 Receitas ({mes_sel})", f"R$ {total_receitas:,.2f}")
-    c2.metric(f"📉 Despesas ({mes_sel})", f"R$ {total_despesas:,.2f}")
-    c3.metric("⚖️ Saldo Período", f"R$ {saldo_total:,.2f}", delta=f"Cartão: R$ {total_cartao:,.2f}", delta_color="inverse")
+    c2.metric(f"📉 Despesas Realizadas", f"R$ {total_despesas_efetivas:,.2f}", help="Soma de Pix/Débito + Cartões já vencidos.")
+    c3.metric("⚖️ Saldo Real Atual", f"R$ {saldo_total_real:,.2f}")
+
+    # Nova linha de informação de cartão solicitada
+    st.info(f"💳 **Info Cartões:** Em Aberto (Futuro): R$ {valor_em_aberto_cartao:,.2f} | Quitado (Já deduzido): R$ {valor_quitado_cartao:,.2f} | Total Geral no Cartão: R$ {total_cartao_mes:,.2f}")
 
     st.write("---")
-    # Segunda Linha: Saldos Individuais Baseados nos Usuários do Secrets
+    # Segunda Linha: Saldos Individuais
     cols_individual = st.columns(len(usuarios_permitidos) + 1)
-    
     for i, u in enumerate(usuarios_permitidos):
         rec_u = df_e[df_e['familiar'] == u]['valor'].sum() if not df_e.empty else 0.0
-        desp_u = df[df['familiar'] == u]['valor'].sum() if not df.empty else 0.0
-        cols_individual[i].metric(f"⚖️ Saldo ({u})", f"R$ {(rec_u - desp_u):,.2f}")
+        # Cálculo de despesa efetiva individual
+        desp_u_efetiva = 0.0
+        df_u = df[df['familiar'] == u]
+        for _, r_u in df_u.iterrows():
+            if r_u['metodo'] != "Cartão de Crédito":
+                desp_u_efetiva += r_u['valor']
+            else:
+                v_info_u = df_cards_config[df_cards_config['id'] == r_u['id_vinc_cartao']]
+                v_dia_u = v_info_u['dia_vencimento'].values[0] if not v_info_u.empty else 32
+                if hoje_dia >= v_dia_u:
+                    desp_u_efetiva += r_u['valor']
+        
+        cols_individual[i].metric(f"⚖️ Saldo ({u})", f"R$ {(rec_u - desp_u_efetiva):,.2f}")
     
-    cols_individual[-1].metric("💰 Soma dos Saldos", f"R$ {saldo_total:,.2f}")
+    cols_individual[-1].metric("💰 Soma dos Saldos", f"R$ {saldo_total_real:,.2f}")
 
     if not df.empty:
         st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
