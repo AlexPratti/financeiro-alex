@@ -88,13 +88,26 @@ with tab_gastos:
             cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
         with c2:
             metodos_fixos = ["Dinheiro/Pix", "Cartão de Débito"]
+            # Criamos o dicionário de cartões vindos do banco
             dict_cartoes = {row['apelido_cartao']: row['id'] for _, row in df_cards_config.iterrows()} if not df_cards_config.empty else {}
             opcoes_metodo = metodos_fixos + list(dict_cartoes.keys())
             metodo_escolhido = st.selectbox("Método de Pagamento", opcoes_metodo)
+        
         with c3:
-            # Só habilita parcelas se for cartão (se o método estiver no dict de cartões)
-            is_cartao = metodo_escolhido in dict_cartoes.keys()
-            num_parcelas = st.number_input("Parcelas", min_value=1, max_value=24, value=1, disabled=not is_cartao)
+            # CORREÇÃO: Verifica se o método escolhido NÃO está na lista de fixos
+            # Se não for Pix nem Débito, assume-se que é um dos cartões cadastrados
+            is_cartao_selecionado = metodo_escolhido not in metodos_fixos
+            
+            num_parcelas = st.number_input(
+                "Parcelas", 
+                min_value=1, 
+                max_value=24, 
+                value=1, 
+                step=1,
+                disabled=not is_cartao_selecionado, # Aqui ele libera o campo
+                help="Disponível apenas para pagamentos com Cartão de Crédito"
+            )
+
         
         if st.form_submit_button("🚀 Registrar Despesa"):
             if desc and valor_total > 0:
