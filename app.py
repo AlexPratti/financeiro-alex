@@ -82,36 +82,51 @@ with tab_gastos:
     st.info(f"💰 **Receitas Totais do Mês Atual:** R$ {total_receitas_mes_atual:,.2f}")
     with st.form("form_despesa", clear_on_submit=True):
         desc = st.text_input("Descrição da Despesa")
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns([2, 2, 1]) # Adicionada coluna para parcelas
         with c1:
-            valor = st.number_input("Valor (R$)", min_value=0.0, step=0.01, format="%.2f", key="input_valor_despesa")
+            valor_total = st.number_input("Valor Total (R$)", min_value=0.0, step=0.01, format="%.2f", key="input_valor_despesa")
             cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
         with c2:
             metodos_fixos = ["Dinheiro/Pix", "Cartão de Débito"]
             dict_cartoes = {row['apelido_cartao']: row['id'] for _, row in df_cards_config.iterrows()} if not df_cards_config.empty else {}
             opcoes_metodo = metodos_fixos + list(dict_cartoes.keys())
             metodo_escolhido = st.selectbox("Método de Pagamento", opcoes_metodo)
+        with c3:
+            # Só habilita parcelas se for cartão (se o método estiver no dict de cartões)
+            is_cartao = metodo_escolhido in dict_cartoes.keys()
+            num_parcelas = st.number_input("Parcelas", min_value=1, max_value=24, value=1, disabled=not is_cartao)
         
         if st.form_submit_button("🚀 Registrar Despesa"):
-            if desc and valor > 0:
+            if desc and valor_total > 0:
                 id_card_vinculo = dict_cartoes.get(metodo_escolhido)
                 metodo_final = "Cartão de Crédito" if id_card_vinculo else metodo_escolhido
                 
-                # Ajuste de Fuso Horário Brasil
+                # Fuso Horário e Data Base
                 fuso_br = pytz.timezone('America/Sao_Paulo')
-                data_hoje_br = datetime.now(fuso_br).strftime("%d/%m/%Y")
+                data_base = datetime.now(fuso_br)
+                valor_parcela = valor_total / num_parcelas
+
+                for i in range(num_parcelas):
+                    # Calcula o mês futuro (adicionando i meses)
+                    # Lógica simples: data_base + i meses
+                    mes_futuro = (data_base.month + i - 1) % 12 + 1
+                    ano_futuro = data_base.year + (data_base.month + i - 1) // 12
+                    data_registro_parcela = data_base.replace(month=mes_futuro, year=ano_futuro).strftime("%d/%m/%Y")
+                    
+                    desc_final = f"{desc} ({i+1}/{num_parcelas})" if num_parcelas > 1 else desc
+                    
+                    nova_linha = {
+                        "data_registro": data_registro_parcela,
+                        "descricao": desc_final, 
+                        "valor": valor_parcela, 
+                        "categoria": cat, 
+                        "metodo": metodo_final,
+                        "familiar": st.session_state["familiar_nome"],
+                        "id_vinc_cartao": id_card_vinculo
+                    }
+                    conn.table("controle_financeiro").insert(nova_linha).execute()
                 
-                nova_linha = {
-                    "data_registro": data_hoje_br,
-                    "descricao": desc, 
-                    "valor": valor, 
-                    "categoria": cat, 
-                    "metodo": metodo_final,
-                    "familiar": st.session_state["familiar_nome"],
-                    "id_vinc_cartao": id_card_vinculo
-                }
-                conn.table("controle_financeiro").insert(nova_linha).execute()
-                st.success("✅ Despesa Registrada!")
+                st.success(f"✅ {'Despesa' if num_parcelas == 1 else 'Parcelas'} Registrada(s)!")
                 st.rerun()
 
 with tab_receitas:
