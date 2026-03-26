@@ -146,11 +146,12 @@ with tab_gestao_cartoes:
     if not df_cards_config.empty:
         st.divider()
         for _, c_row in df_cards_config.iterrows():
-            col_a, col_b = st.columns([4, 1])
+            col_a, col_b = st.columns([4, 1]) # Adicionado proporção [4, 1]
             col_a.write(f"💳 **{c_row['banco_nome']}** - {c_row['apelido_cartao']} (Vencimento dia {c_row['dia_vencimento']})")
             if col_b.button("🗑️ Excluir", key=f"del_c_{c_row['id']}"):
                 conn.table("gestao_cartoes_vinc").delete().eq("id", c_row['id']).execute()
                 st.rerun()
+
 
 # --- FILTRAGEM DE DADOS NA SIDEBAR ---
 if not df_raw.empty:
@@ -267,41 +268,56 @@ if not df_raw.empty:
         if mostrar_historico:
             st.divider()
             st.subheader(f"Histórico de Despesas: {familiar_filter}")
+            
+            # Cabeçalho com índices
             h = st.columns([1, 1.5, 1, 1.5, 1, 0.5])
-            headers = ["**Data**", "**Descrição**", "**Valor**", "**Método**", "**Familiar**", "**Ação**"]
-            for col, text in zip(h, headers): col.write(text)
+            h[0].write("**Data**")
+            h[1].write("**Descrição**")
+            h[2].write("**Valor**")
+            h[3].write("**Método**")
+            h[4].write("**Familiar**")
+            h[5].write("**Ação**")
             
             for _, row in df.iterrows():
                 r = st.columns([1, 1.5, 1, 1.5, 1, 0.5])
-                r.write(row['data_registro'])
-                r.write(row['descricao'])
-                r.write(f"R$ {row['valor']:.2f}")
+                r[0].write(row['data_registro'])
+                r[1].write(row['descricao'])
+                r[2].write(f"R$ {row['valor']:.2f}")
                 
                 metodo_txt = row['metodo']
                 if row['metodo'] == "Cartão de Crédito":
                     v_label = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
-                    if not v_label.empty: metodo_txt = f"💳 {v_label['apelido_cartao'].values[0]}"
+                    if not v_label.empty: 
+                        metodo_txt = f"💳 {v_label['apelido_cartao'].values[0]}"
                 
-                r.write(metodo_txt)
-                r.write(row['familiar'])
-                if r.button("🗑️", key=f"del_d_{row['id']}"):
+                r[3].write(metodo_txt)
+                r[4].write(row['familiar'])
+                if r[5].button("🗑️", key=f"del_d_{row['id']}"):
                     conn.table("controle_financeiro").delete().eq("id", row['id']).execute()
                     st.rerun()
-
+                    
             if not df_e.empty:
                 st.divider()
                 st.subheader(f"Histórico de Entradas: {familiar_filter}")
+                
                 he = st.columns([1, 2, 1, 1.5, 0.5])
-                for col, text in zip(he, ["**Data**", "**Descrição**", "**Valor**", "**Origem**", "**Ação**"]): col.write(text)
+                he[0].write("**Data**")
+                he[1].write("**Descrição**")
+                he[2].write("**Valor**")
+                he[3].write("**Origem**")
+                he[4].write("**Ação**")
+
                 for _, row_e in df_e.iterrows():
                     re = st.columns([1, 2, 1, 1.5, 0.5])
-                    re.write(row_e['data_registro'])
-                    re.write(row_e['descricao'])
-                    re.write(f"R$ {row_e['valor']:.2f}")
-                    re.write(row_e['tipo_entrada'])
-                    if re.button("🗑️", key=f"del_e_{row_e['id']}"):
+                    re[0].write(row_e['data_registro'])
+                    re[1].write(row_e['descricao'])
+                    re[2].write(f"R$ {row_e['valor']:.2f}")
+                    re[3].write(row_e['tipo_entrada'])
+                    if re[4].button("🗑️", key=f"del_e_{row_e['id']}"):
                         conn.table("entradas_financeiras").delete().eq("id", row_e['id']).execute()
                         st.rerun()
+
+ 
 else:
     st.info("Nenhum dado encontrado.")
 
