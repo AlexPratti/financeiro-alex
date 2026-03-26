@@ -79,76 +79,68 @@ st.subheader("📝 Novo Lançamento")
 tab_gastos, tab_receitas, tab_gestao_cartoes = st.tabs(["💸 Registrar Despesa", "📈 Registrar Saldo/Entrada", "💳 Gestão de Cartões"])
 
 with tab_gastos:
+    import calendar
     st.info(f"💰 **Receitas Totais do Mês Atual:** R$ {total_receitas_mes_atual:,.2f}")
     
-    # 1. Seleção do Método FORA do formulário para habilitar a reatividade
     metodos_fixos = ["Dinheiro/Pix", "Cartão de Débito"]
-    dict_cartoes = {row['apelido_cartao']: row['id'] for _, row in df_cards_config.iterrows()} if not df_cards_config.empty else {}
+    dict_cartoes = {row['apelido_cartao']: {'id': row['id'], 'venc': row['dia_vencimento']} for _, row in df_cards_config.iterrows()} if not df_cards_config.empty else {}
     opcoes_metodo = metodos_fixos + list(dict_cartoes.keys())
     
-    metodo_escolhido = st.selectbox("Selecione o Método de Pagamento", opcoes_metodo, key="metodo_reativo")
-    is_cartao_selecionado = metodo_escolhido not in metodos_fixos
+    metodo_escolhido = st.selectbox("Selecione o Método de Pagamento", opcoes_metodo, key="metodo_inteligente")
+    is_cartao = metodo_escolhido not in metodos_fixos
 
-    # 2. Início do Formulário
     with st.form("form_despesa", clear_on_submit=True):
         desc = st.text_input("Descrição da Despesa")
-        c1, c2 = st.columns([2, 1])
-        
+        c1, c2 = st.columns(2)
         with c1:
             valor_total = st.number_input("Valor Total (R$)", min_value=0.0, step=0.01, format="%.2f")
             cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
-        
         with c2:
-            # Agora o campo de parcelas reage ao 'metodo_escolhido' lá de cima
-            num_parcelas = st.number_input(
-                "Nº de Parcelas", 
-                min_value=1, 
-                max_value=24, 
-                value=1, 
-                disabled=not is_cartao_selecionado,
-                help="Parcelamento disponível apenas para Cartão de Crédito"
-            )
+            num_parcelas = st.number_input("Nº de Parcelas", min_value=1, max_value=24, value=1, disabled=not is_cartao)
         
         if st.form_submit_button("🚀 Registrar Despesa"):
             if desc and valor_total > 0:
-                id_card_vinculo = dict_cartoes.get(metodo_escolhido)
-                metodo_final = "Cartão de Crédito" if id_card_vinculo else metodo_escolhido
-                
                 fuso_br = pytz.timezone('America/Sao_Paulo')
-                data_base = datetime.now(fuso_br)
+                data_compra = datetime.now(fuso_br)
+                
+                # Lógica de Decisão do Mês Inicial
+                skip_month = 0
+                id_card_vinculo = None
+                
+                if is_cartao:
+                    card_info = dict_cartoes.get(metodo_escolhido)
+                    id_card_vinculo = card_info['id']
+                    vencimento = card_info['venc']
+                    fechamento = vencimento - 7
+                    if fechamento <= 0: fechamento = 1
+                    
+                    # Se comprou após ou no dia do fechamento, a 1ª parcela pula para o próximo mês
+                    if data_compra.day >= fechamento:
+                        skip_month = 1
+                
                 valor_parcela = valor_total / num_parcelas
 
                 for i in range(num_parcelas):
-                    # Lógica para avançar os meses corretamente
-                    mes_total = data_base.month + i
-                    ano_ajustado = data_base.year + (mes_total - 1) // 12
+                    # i + skip_month garante que comece no mês certo (0 para este, 1 para o próximo)
+                    mes_total = data_compra.month + i + skip_month
+                    ano_ajustado = data_compra.year + (mes_total - 1) // 12
                     mes_ajustado = (mes_total - 1) % 12 + 1
                     
-                    # Tenta manter o dia original, mas ajusta se o mês for mais curto (ex: dia 31 em Abril)
-                    dia_original = data_base.day
-                    try:
-                        data_registro_parcela = datetime(ano_ajustado, mes_ajustado, dia_original).strftime("%d/%m/%Y")
-                    except ValueError:
-                        # Se der erro (ex: 31 de fevereiro), usa o último dia do mês (dia 28 ou 30)
-                        import calendar
-                        ultimo_dia = calendar.monthrange(ano_ajustado, mes_ajustado)[1]
-                        data_registro_parcela = datetime(ano_ajustado, mes_ajustado, ultimo_dia).strftime("%d/%m/%Y")
+                    ultimo_dia = calendar.monthrange(ano_ajustado, mes_ajustado)[1]
+                    dia_final = min(data_compra.day, ultimo_dia)
                     
-                    desc_final = f"{desc} ({i+1}/{num_parcelas})" if num_parcelas > 1 else desc
+                    data_reg = datetime(ano_ajustado, mes_ajustado, dia_final).strftime("%d/%m/%Y")
                     
                     nova_linha = {
-                        "data_registro": data_registro_parcela,
-                        "descricao": desc_final, 
-                        "valor": valor_parcela, 
-                        "categoria": cat, 
-                        "metodo": metodo_final,
-                        "familiar": st.session_state["familiar_nome"],
-                        "id_vinc_cartao": id_card_vinculo
+                        "data_registro": data_reg, "descricao": f"{desc} ({i+1}/{num_parcelas})" if num_parcelas > 1 else desc,
+                        "valor": valor_parcela, "categoria": cat, "metodo": "Cartão de Crédito" if is_cartao else metodo_escolhido,
+                        "familiar": st.session_state["familiar_nome"], "id_vinc_cartao": id_card_vinculo
                     }
                     conn.table("controle_financeiro").insert(nova_linha).execute()
                 
-                st.success(f"✅ Registrado com sucesso!")
+                st.success(f"✅ Registrado! Cobrança inicia em: {data_reg if num_parcelas == 1 else 'meses subsequentes'}")
                 st.rerun()
+
 
 
 with tab_receitas:
