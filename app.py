@@ -31,8 +31,8 @@ if not st.session_state["autenticado"]:
             st.error("Usuário não autorizado.")
     st.stop()
 
-# --- ATUALIZAÇÃO AUTOMÁTICA (10 segundos) ---
-st_autorefresh(interval=10000, key="datarefresh")
+# --- ATUALIZAÇÃO AUTOMÁTICA (30 segundos) ---
+st_autorefresh(interval=30000, key="datarefresh")
 
 # --- CONEXÃO COM SUPABASE ---
 conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["URL_SUPABASE"], key=st.secrets["KEY_SUPABASE"])
