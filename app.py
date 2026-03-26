@@ -80,51 +80,59 @@ tab_gastos, tab_receitas, tab_gestao_cartoes = st.tabs(["💸 Registrar Despesa"
 
 with tab_gastos:
     st.info(f"💰 **Receitas Totais do Mês Atual:** R$ {total_receitas_mes_atual:,.2f}")
+    
+    # 1. Seleção do Método FORA do formulário para habilitar a reatividade
+    metodos_fixos = ["Dinheiro/Pix", "Cartão de Débito"]
+    dict_cartoes = {row['apelido_cartao']: row['id'] for _, row in df_cards_config.iterrows()} if not df_cards_config.empty else {}
+    opcoes_metodo = metodos_fixos + list(dict_cartoes.keys())
+    
+    metodo_escolhido = st.selectbox("Selecione o Método de Pagamento", opcoes_metodo, key="metodo_reativo")
+    is_cartao_selecionado = metodo_escolhido not in metodos_fixos
+
+    # 2. Início do Formulário
     with st.form("form_despesa", clear_on_submit=True):
         desc = st.text_input("Descrição da Despesa")
-        c1, c2, c3 = st.columns([2, 2, 1]) # Adicionada coluna para parcelas
-        with c1:
-            valor_total = st.number_input("Valor Total (R$)", min_value=0.0, step=0.01, format="%.2f", key="input_valor_despesa")
-            cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
-        with c2:
-            metodos_fixos = ["Dinheiro/Pix", "Cartão de Débito"]
-            # Criamos o dicionário de cartões vindos do banco
-            dict_cartoes = {row['apelido_cartao']: row['id'] for _, row in df_cards_config.iterrows()} if not df_cards_config.empty else {}
-            opcoes_metodo = metodos_fixos + list(dict_cartoes.keys())
-            metodo_escolhido = st.selectbox("Método de Pagamento", opcoes_metodo)
+        c1, c2 = st.columns([2, 1])
         
-        with c3:
-            # CORREÇÃO: Verifica se o método escolhido NÃO está na lista de fixos
-            # Se não for Pix nem Débito, assume-se que é um dos cartões cadastrados
-            is_cartao_selecionado = metodo_escolhido not in metodos_fixos
-            
+        with c1:
+            valor_total = st.number_input("Valor Total (R$)", min_value=0.0, step=0.01, format="%.2f")
+            cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro Diversos", "Carro Combustível", "Lazer", "Cartão", "Supermercado", "Farmácia", "Outros"])
+        
+        with c2:
+            # Agora o campo de parcelas reage ao 'metodo_escolhido' lá de cima
             num_parcelas = st.number_input(
-                "Parcelas", 
+                "Nº de Parcelas", 
                 min_value=1, 
                 max_value=24, 
                 value=1, 
-                step=1,
-                disabled=not is_cartao_selecionado, # Aqui ele libera o campo
-                help="Disponível apenas para pagamentos com Cartão de Crédito"
+                disabled=not is_cartao_selecionado,
+                help="Parcelamento disponível apenas para Cartão de Crédito"
             )
-
         
         if st.form_submit_button("🚀 Registrar Despesa"):
             if desc and valor_total > 0:
                 id_card_vinculo = dict_cartoes.get(metodo_escolhido)
                 metodo_final = "Cartão de Crédito" if id_card_vinculo else metodo_escolhido
                 
-                # Fuso Horário e Data Base
                 fuso_br = pytz.timezone('America/Sao_Paulo')
                 data_base = datetime.now(fuso_br)
                 valor_parcela = valor_total / num_parcelas
 
                 for i in range(num_parcelas):
-                    # Calcula o mês futuro (adicionando i meses)
-                    # Lógica simples: data_base + i meses
-                    mes_futuro = (data_base.month + i - 1) % 12 + 1
-                    ano_futuro = data_base.year + (data_base.month + i - 1) // 12
-                    data_registro_parcela = data_base.replace(month=mes_futuro, year=ano_futuro).strftime("%d/%m/%Y")
+                    # Lógica para avançar os meses corretamente
+                    mes_total = data_base.month + i
+                    ano_ajustado = data_base.year + (mes_total - 1) // 12
+                    mes_ajustado = (mes_total - 1) % 12 + 1
+                    
+                    # Tenta manter o dia original, mas ajusta se o mês for mais curto (ex: dia 31 em Abril)
+                    dia_original = data_base.day
+                    try:
+                        data_registro_parcela = datetime(ano_ajustado, mes_ajustado, dia_original).strftime("%d/%m/%Y")
+                    except ValueError:
+                        # Se der erro (ex: 31 de fevereiro), usa o último dia do mês (dia 28 ou 30)
+                        import calendar
+                        ultimo_dia = calendar.monthrange(ano_ajustado, mes_ajustado)[1]
+                        data_registro_parcela = datetime(ano_ajustado, mes_ajustado, ultimo_dia).strftime("%d/%m/%Y")
                     
                     desc_final = f"{desc} ({i+1}/{num_parcelas})" if num_parcelas > 1 else desc
                     
@@ -139,8 +147,9 @@ with tab_gastos:
                     }
                     conn.table("controle_financeiro").insert(nova_linha).execute()
                 
-                st.success(f"✅ {'Despesa' if num_parcelas == 1 else 'Parcelas'} Registrada(s)!")
+                st.success(f"✅ Registrado com sucesso!")
                 st.rerun()
+
 
 with tab_receitas:
     cols_rec = st.columns(len(usuarios_permitidos))
