@@ -209,6 +209,7 @@ with tab_gestao_cartoes:
 
 
 # --- FILTRAGEM DE DADOS NA SIDEBAR ---
+
 if not df_raw.empty:
     st.sidebar.header("🔍 Filtros")
     anos_list = sorted(df_raw['Ano'].unique(), reverse=True)
@@ -219,8 +220,9 @@ if not df_raw.empty:
     meses_disp = [m for m in meses_ordem if m in df_ano['Mes_PT'].unique()]
     mes_sel = st.sidebar.selectbox("Mês", meses_disp)
     
-    fams_disp = ["Todos"] + sorted(list(set(usuarios_permitidos) | set(df_raw['familiar'].unique())))
-    familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp)
+    # AJUSTE: Adicionada opção 'Ocultar' e definida como padrão (index=0)
+    fams_disp = ["Ocultar", "Todos"] + sorted(list(set(usuarios_permitidos) | set(df_raw['familiar'].unique())))
+    familiar_filter = st.sidebar.selectbox("Filtrar por Familiar", fams_disp, index=0)
 
     st.sidebar.divider()
     mostrar_historico = st.sidebar.checkbox("Exibir Histórico Detalhado", value=True)
@@ -267,6 +269,7 @@ if not df_raw.empty:
             else:
                 total_despesas_efetivas += row['valor']
 
+        # Mantenha o cálculo global do saldo real (que aparece sempre no topo)
     saldo_total_real = total_receitas - total_despesas_efetivas
     total_cartao_bruto = df[df["metodo"] == "Cartão de Crédito"]["valor"].sum() if not df.empty else 0.0
     
@@ -278,40 +281,53 @@ if not df_raw.empty:
 
     st.info(f"💳 **Info Cartões:** Em Aberto (Futuro): R$ {valor_em_aberto_cartao:,.2f} | Quitado (No mês): R$ {valor_quitado_cartao:,.2f} | Total: R$ {total_cartao_bruto:,.2f}")
 
-    st.write("---")
-    # Saldos Individuais com Tratamento de Erro
-    cols_individual = st.columns(len(usuarios_permitidos) + 1)
-    for i, u in enumerate(usuarios_permitidos):
-        rec_u = df_e[df_e['familiar'] == u]['valor'].sum() if not df_e.empty else 0.0
-        desp_u_efetiva = 0.0
-        df_u = df[df['familiar'] == u]
+    # NOVO: Só mostra os detalhes individuais e o histórico se NÃO estiver em "Ocultar"
+    if familiar_filter != "Ocultar":
+        st.write("---")
         
-        for _, r_u in df_u.iterrows():
-            if r_u['metodo'] != "Cartão de Crédito":
-                desp_u_efetiva += r_u['valor']
-            else:
-                # Busca informação do cartão vinculado
-                v_info_u = df_cards_config[df_cards_config['id'] == r_u['id_vinc_cartao']]
-                
-                # CORREÇÃO: Garante que v_dia_u tenha um valor padrão (ex: 28) se o cartão não for encontrado
-                if not v_info_u.empty:
-                    v_dia_u = int(v_info_u['dia_vencimento'].iloc[0])
+        # Filtra o DataFrame se o usuário escolher um familiar específico (Merlim ou Pratti)
+        df_display = df.copy()
+        df_e_display = df_e.copy() if not df_e.empty else pd.DataFrame()
+        
+        if familiar_filter != "Todos":
+            df_display = df_display[df_display['familiar'] == familiar_filter]
+            if not df_e_display.empty:
+                df_e_display = df_e_display[df_e_display['familiar'] == familiar_filter]
+
+        # Saldos Individuais
+        cols_individual = st.columns(len(usuarios_permitidos) + 1)
+        for i, u in enumerate(usuarios_permitidos):
+            rec_u = df_e[df_e['familiar'] == u]['valor'].sum() if not df_e.empty else 0.0
+            desp_u_efetiva = 0.0
+            df_u = df[df['familiar'] == u]
+            for _, r_u in df_u.iterrows():
+                # ... (Sua lógica de cálculo v_dia_u e dia_f_u que corrigimos antes) ...
+                if r_u['metodo'] != "Cartão de Crédito":
+                    desp_u_efetiva += r_u['valor']
                 else:
-                    v_dia_u = 28 # Valor padrão de segurança
-                
-                dia_f_u = v_dia_u - 7
-                if dia_f_u <= 0: dia_f_u = 1
-                
-                data_c_u = pd.to_datetime(r_u['data_registro'], format='%d/%m/%Y')
-                
-                # Lógica de vencimento para saldo individual
-                if data_c_u.day < dia_f_u:
-                    if not (hoje_dt.month == data_c_u.month and hoje_dt.day < v_dia_u):
-                        desp_u_efetiva += r_u['valor']
+                    v_info_u = df_cards_config[df_cards_config['id'] == r_u['id_vinc_cartao']]
+                    v_dia_u = int(v_info_u['dia_vencimento'].iloc[0]) if not v_info_u.empty else 28
+                    dia_f_u = max(1, v_dia_u - 7)
+                    data_c_u = pd.to_datetime(r_u['data_registro'], format='%d/%m/%Y')
+                    if data_c_u.day < dia_f_u:
+                        if not (hoje_dt.month == data_c_u.month and hoje_dt.day < v_dia_u):
+                            desp_u_efetiva += r_u['valor']
+            
+            cols_individual[i].metric(f"⚖️ Saldo ({u})", f"R$ {(rec_u - desp_u_efetiva):,.2f}")
         
-        cols_individual[i].metric(f"⚖️ Saldo ({u})", f"R$ {(rec_u - desp_u_efetiva):,.2f}")
-    
-    cols_individual[-1].metric("💰 Soma dos Saldos", f"R$ {saldo_total_real:,.2f}")
+        cols_individual[-1].metric("💰 Soma dos Saldos", f"R$ {saldo_total_real:,.2f}")
+
+        # Análise Gráfica e Histórico (usando df_display filtrado)
+        if not df_display.empty:
+            st.subheader(f"Análise: {mes_sel}/{ano_sel} - [{familiar_filter}]")
+            st.bar_chart(df_display.groupby("categoria")["valor"].sum())
+            
+            # ... (Aqui você mantém o código do botão de Excel e a tabela do Histórico detalhado) ...
+            # Lembre-se de usar 'df_display' no histórico para ele filtrar corretamente!
+    else:
+        st.write("---")
+        st.warning("⚠️ Detalhes individuais e Histórico estão ocultos. Selecione um familiar ou 'Todos' na barra lateral.")
+
 
 
     if not df.empty:
