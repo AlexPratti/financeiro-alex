@@ -121,13 +121,20 @@ with tab_gastos:
                 valor_parcela = valor_total / num_parcelas
 
                 for i in range(num_parcelas):
-                    # i + skip_month garante que comece no mês certo (0 para este, 1 para o próximo)
+                    # i + skip_month define se começa este mês ou o próximo
                     mes_total = data_compra.month + i + skip_month
                     ano_ajustado = data_compra.year + (mes_total - 1) // 12
                     mes_ajustado = (mes_total - 1) % 12 + 1
                     
+                    # AJUSTE: Em vez de salvar o dia da compra (26), 
+                    # vamos salvar o dia do vencimento do cartão para o histórico ficar correto
+                    if is_cartao:
+                        dia_exibicao = vencimento 
+                    else:
+                        dia_exibicao = data_compra.day
+                    
                     ultimo_dia = calendar.monthrange(ano_ajustado, mes_ajustado)[1]
-                    dia_final = min(data_compra.day, ultimo_dia)
+                    dia_final = min(dia_exibicao, ultimo_dia)
                     
                     data_reg = datetime(ano_ajustado, mes_ajustado, dia_final).strftime("%d/%m/%Y")
                     
