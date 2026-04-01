@@ -169,11 +169,19 @@ with tab_dashboard:
     else:
         # Filtragem dos Dataframes para o Dash
         df_view = df_raw[(df_raw['Ano'] == ano_sel) & (df_raw['Mes_PT'] == mes_sel)] if not df_raw.empty else pd.DataFrame()
-        df_ent_view = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)] if not df_ent_raw.empty else pd.DataFrame()
+        
+        # MELHORIA: As receitas agora consideram todo o histórico por padrão para não zerarem o saldo
+        # Mas respeitam o filtro de familiar se selecionado
+        df_ent_view = df_ent_raw.copy() if not df_ent_raw.empty else pd.DataFrame()
         
         if familiar_filter != "Todos":
             df_view = df_view[df_view['familiar'] == familiar_filter] if not df_view.empty else df_view
             df_ent_view = df_ent_view[df_ent_view['familiar'] == familiar_filter] if not df_ent_view.empty else df_ent_view
+
+        # Opção adicional para filtrar receitas por mês caso o usuário queira ver o histórico específico
+        filtrar_receita_mes = st.checkbox("Filtrar Receitas pelo Mês/Ano selecionado", value=False)
+        if filtrar_receita_mes and not df_ent_view.empty:
+            df_ent_view = df_ent_view[(df_ent_view['Ano'] == ano_sel) & (df_ent_view['Mes_PT'] == mes_sel)]
 
         # Cálculos de Saldo Real
         total_rec = df_ent_view['valor'].sum() if not df_ent_view.empty else 0.0
