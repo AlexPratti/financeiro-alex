@@ -167,11 +167,7 @@ with tab_dashboard:
     if familiar_filter == "Ocultar":
         st.warning("⚠️ Selecione um familiar ou 'Todos' na barra lateral para ver os dados.")
     else:
-        # 1. Definir data limite do filtro (mês selecionado)
-        mes_num_sel = list(meses_trad.keys())[list(meses_trad.values()).index(mes_sel)]
-        data_limite_inicio_mes = datetime(int(ano_sel), mes_num_sel, 1).date()
-        
-        # 2. Filtrar Dataframes para o mês atual
+        # 1. Filtro base por Mês/Ano
         df_view = df_raw[(df_raw['Ano'] == ano_sel) & (df_raw['Mes_PT'] == mes_sel)] if not df_raw.empty else pd.DataFrame()
         df_ent_atual = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)] if not df_ent_raw.empty else pd.DataFrame()
 
@@ -179,45 +175,50 @@ with tab_dashboard:
             df_view = df_view[df_view['familiar'] == familiar_filter] if not df_view.empty else df_view
             df_ent_atual = df_ent_atual[df_ent_atual['familiar'] == familiar_filter] if not df_ent_atual.empty else df_ent_atual
 
-        # 3. LÓGICA DE SALDO ACUMULADO (MESES ANTERIORES)
-        receita_passada = 0.0
-        despesa_passada = 0.0
-
-        if not df_ent_raw.empty:
-            df_ant_ent = df_ent_raw[df_ent_raw['data_dt'].dt.date < data_limite_inicio_mes]
-            if familiar_filter != "Todos":
-                df_ant_ent = df_ant_ent[df_ant_ent['familiar'] == familiar_filter]
-            receita_passada = df_ant_ent['valor'].sum()
-
-        if not df_raw.empty:
-            df_ant_desp = df_raw[df_raw['data_dt'].dt.date < data_limite_inicio_mes]
-            if familiar_filter != "Todos":
-                df_ant_desp = df_ant_desp[df_ant_desp['familiar'] == familiar_filter]
-            despesa_passada = df_ant_desp['valor'].sum()
-
-        saldo_anterior = receita_passada - despesa_passada
-        receita_mes_atual = df_ent_atual['valor'].sum() if not df_ent_atual.empty else 0.0
+        # 2. CÁLCULO DE SALDO ACUMULADO (PASSADO)
+        mes_num_sel = list(meses_trad.keys())[list(meses_trad.values()).index(mes_sel)]
+        data_limite_inicio_mes = datetime(int(ano_sel), mes_num_sel, 1).date()
         
-        # Receita Total Disponível = Saldo que sobrou + Receitas novas do mês
-        receita_total_exibicao = saldo_anterior + receita_mes_atual
+        receita_passada = df_ent_raw[df_ent_raw['data_dt'].dt.date < data_limite_inicio_mes]['valor'].sum() if not df_ent_raw.empty else 0.0
+        despesa_passada = df_raw[df_raw['data_dt'].dt.date < data_limite_inicio_mes]['valor'].sum() if not df_raw.empty else 0.0
+        saldo_inicial_mes = receita_passada - despesa_passada
+        
+        receita_mes_total = df_ent_atual['valor'].sum() if not df_ent_atual.empty else 0.0
+        receita_total_disponivel = saldo_inicial_mes + receita_mes_total
 
-        # 4. Cálculo de Despesas do Mês Atual
-        total_desp_mes = 0.0
+        # 3. LÓGICA DE DÉBITO EFETIVO (O que já saiu do bolso HOJE)
+        total_desp_efetiva = 0.0
         if not df_view.empty:
             for _, row in df_view.iterrows():
-                total_desp_mes += row['valor']
+                data_vencimento_despesa = row['data_dt'].date()
+                
+                # Se for Cartão de Crédito, a data de vencimento é o dia configurado no cartão
+                if row['metodo'] == "Cartão de Crédito":
+                    v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
+                    v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
+                    # Ajusta a data de vencimento para o dia do cartão naquele mês/ano
+                    try:
+                        data_vencimento_despesa = datetime(row['data_dt'].year, row['data_dt'].month, v_dia).date()
+                    except: # Caso o dia não exista no mês (ex: 31 de fevereiro)
+                        data_vencimento_despesa = datetime(row['data_dt'].year, row['data_dt'].month, 28).date()
 
+                # SÓ DESCONTA SE A DATA JÁ PASSOU OU É HOJE
+                if data_vencimento_despesa <= agora_br.date():
+                    total_desp_efetiva += row['valor']
+
+        # 4. EXIBIÇÃO DOS CARDS
         c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Receita + Saldo Ant.", f"R$ {receita_total_exibicao:,.2f}")
-        c2.metric("📉 Despesas do Mês", f"R$ {total_desp_mes:,.2f}")
-        c3.metric("⚖️ Saldo Disponível", f"R$ {(receita_total_exibicao - total_desp_mes):,.2f}")
+        c1.metric("📈 Receita Total (c/ Saldo)", f"R$ {receita_total_disponivel:,.2f}")
+        c2.metric("📉 Despesas Efetivadas", f"R$ {total_desp_efetiva:,.2f}", help="Somente o que já venceu até hoje.")
+        c3.metric("⚖️ Saldo Real Agora", f"R$ {(receita_total_disponivel - total_desp_efetiva):,.2f}")
 
+        # 5. GRÁFICO E HISTÓRICO (Mostra tudo do mês para planejamento)
         if not df_view.empty:
-            st.subheader(f"Gastos por Categoria - {familiar_filter}")
+            st.subheader(f"Planejamento de Gastos: {mes_sel}")
             st.bar_chart(df_view.groupby("categoria")["valor"].sum())
 
         if mostrar_historico:
-            st.subheader("📋 Histórico Detalhado")
+            st.subheader("📋 Histórico Detalhado do Mês")
             if not df_view.empty:
                 for _, r in df_view.iterrows():
                     col = st.columns([1, 2, 1, 1, 0.5])
@@ -233,4 +234,3 @@ with tab_dashboard:
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
     st.rerun()
-
