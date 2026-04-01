@@ -170,18 +170,12 @@ with tab_dashboard:
         # Filtragem dos Dataframes para o Dash
         df_view = df_raw[(df_raw['Ano'] == ano_sel) & (df_raw['Mes_PT'] == mes_sel)] if not df_raw.empty else pd.DataFrame()
         
-        # MELHORIA: As receitas agora consideram todo o histórico por padrão para não zerarem o saldo
-        # Mas respeitam o filtro de familiar se selecionado
+        # MELHORIA: Receitas agora pegam TODO o histórico para não zerar o saldo ao mudar o mês
         df_ent_view = df_ent_raw.copy() if not df_ent_raw.empty else pd.DataFrame()
         
         if familiar_filter != "Todos":
             df_view = df_view[df_view['familiar'] == familiar_filter] if not df_view.empty else df_view
             df_ent_view = df_ent_view[df_ent_view['familiar'] == familiar_filter] if not df_ent_view.empty else df_ent_view
-
-        # Opção adicional para filtrar receitas por mês caso o usuário queira ver o histórico específico
-        filtrar_receita_mes = st.checkbox("Filtrar Receitas pelo Mês/Ano selecionado", value=False)
-        if filtrar_receita_mes and not df_ent_view.empty:
-            df_ent_view = df_ent_view[(df_ent_view['Ano'] == ano_sel) & (df_ent_view['Mes_PT'] == mes_sel)]
 
         # Cálculos de Saldo Real
         total_rec = df_ent_view['valor'].sum() if not df_ent_view.empty else 0.0
@@ -193,16 +187,18 @@ with tab_dashboard:
                     total_desp_efetiva += row['valor']
                 else:
                     v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
-                    v_dia = v_info['dia_vencimento'].iloc[0] if not v_info.empty else 28
-                    dia_f = max(1, v_dia - 7)
-                    if row['data_dt'].day < dia_f: # Se caiu na fatura atual
-                        if not (agora_br.month == row['data_dt'].month and agora_br.day < v_dia):
-                            total_desp_efetiva += row['valor']
+                    # Usa o dia de vencimento real ou 28 como padrão
+                    v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
+                    fechamento = max(1, v_dia - 7)
+                    
+                    # Lógica para somar despesa se ela pertence à fatura do mês selecionado
+                    if row['data_dt'].day < fechamento:
+                         total_desp_efetiva += row['valor']
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Receitas", f"R$ {total_rec:,.2f}")
-        c2.metric("📉 Despesas Efetivas", f"R$ {total_desp_efetiva:,.2f}")
-        c3.metric("⚖️ Saldo Real", f"R$ {(total_rec - total_desp_efetiva):,.2f}")
+        c1.metric("📈 Receitas Acumuladas", f"R$ {total_rec:,.2f}")
+        c2.metric("📉 Despesas do Mês", f"R$ {total_desp_efetiva:,.2f}")
+        c3.metric("⚖️ Saldo Disponível", f"R$ {(total_rec - total_desp_efetiva):,.2f}")
 
         if not df_view.empty:
             st.subheader(f"Gastos por Categoria - {familiar_filter}")
