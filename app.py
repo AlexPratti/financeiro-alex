@@ -167,38 +167,50 @@ with tab_dashboard:
     if familiar_filter == "Ocultar":
         st.warning("⚠️ Selecione um familiar ou 'Todos' na barra lateral para ver os dados.")
     else:
-        # Filtragem dos Dataframes para o Dash
+        # 1. Definir data limite do filtro (mês selecionado)
+        mes_num_sel = list(meses_trad.keys())[list(meses_trad.values()).index(mes_sel)]
+        data_limite_inicio_mes = datetime(int(ano_sel), mes_num_sel, 1).date()
+        
+        # 2. Filtrar Dataframes para o mês atual
         df_view = df_raw[(df_raw['Ano'] == ano_sel) & (df_raw['Mes_PT'] == mes_sel)] if not df_raw.empty else pd.DataFrame()
-        
-        # MELHORIA: Receitas agora pegam TODO o histórico para não zerar o saldo ao mudar o mês
-        df_ent_view = df_ent_raw.copy() if not df_ent_raw.empty else pd.DataFrame()
-        
+        df_ent_atual = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)] if not df_ent_raw.empty else pd.DataFrame()
+
         if familiar_filter != "Todos":
             df_view = df_view[df_view['familiar'] == familiar_filter] if not df_view.empty else df_view
-            df_ent_view = df_ent_view[df_ent_view['familiar'] == familiar_filter] if not df_ent_view.empty else df_ent_view
+            df_ent_atual = df_ent_atual[df_ent_atual['familiar'] == familiar_filter] if not df_ent_atual.empty else df_ent_atual
 
-        # Cálculos de Saldo Real
-        total_rec = df_ent_view['valor'].sum() if not df_ent_view.empty else 0.0
-        total_desp_efetiva = 0.0
+        # 3. LÓGICA DE SALDO ACUMULADO (MESES ANTERIORES)
+        receita_passada = 0.0
+        despesa_passada = 0.0
+
+        if not df_ent_raw.empty:
+            df_ant_ent = df_ent_raw[df_ent_raw['data_dt'].dt.date < data_limite_inicio_mes]
+            if familiar_filter != "Todos":
+                df_ant_ent = df_ant_ent[df_ant_ent['familiar'] == familiar_filter]
+            receita_passada = df_ant_ent['valor'].sum()
+
+        if not df_raw.empty:
+            df_ant_desp = df_raw[df_raw['data_dt'].dt.date < data_limite_inicio_mes]
+            if familiar_filter != "Todos":
+                df_ant_desp = df_ant_desp[df_ant_desp['familiar'] == familiar_filter]
+            despesa_passada = df_ant_desp['valor'].sum()
+
+        saldo_anterior = receita_passada - despesa_passada
+        receita_mes_atual = df_ent_atual['valor'].sum() if not df_ent_atual.empty else 0.0
         
+        # Receita Total Disponível = Saldo que sobrou + Receitas novas do mês
+        receita_total_exibicao = saldo_anterior + receita_mes_atual
+
+        # 4. Cálculo de Despesas do Mês Atual
+        total_desp_mes = 0.0
         if not df_view.empty:
             for _, row in df_view.iterrows():
-                if row['metodo'] != "Cartão de Crédito":
-                    total_desp_efetiva += row['valor']
-                else:
-                    v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
-                    # Usa o dia de vencimento real ou 28 como padrão
-                    v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
-                    fechamento = max(1, v_dia - 7)
-                    
-                    # Lógica para somar despesa se ela pertence à fatura do mês selecionado
-                    if row['data_dt'].day < fechamento:
-                         total_desp_efetiva += row['valor']
+                total_desp_mes += row['valor']
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Receitas Acumuladas", f"R$ {total_rec:,.2f}")
-        c2.metric("📉 Despesas do Mês", f"R$ {total_desp_efetiva:,.2f}")
-        c3.metric("⚖️ Saldo Disponível", f"R$ {(total_rec - total_desp_efetiva):,.2f}")
+        c1.metric("📈 Receita + Saldo Ant.", f"R$ {receita_total_exibicao:,.2f}")
+        c2.metric("📉 Despesas do Mês", f"R$ {total_desp_mes:,.2f}")
+        c3.metric("⚖️ Saldo Disponível", f"R$ {(receita_total_exibicao - total_desp_mes):,.2f}")
 
         if not df_view.empty:
             st.subheader(f"Gastos por Categoria - {familiar_filter}")
@@ -221,3 +233,4 @@ with tab_dashboard:
 if st.sidebar.button("Sair / Trocar Usuário"):
     st.session_state["autenticado"] = False
     st.rerun()
+
