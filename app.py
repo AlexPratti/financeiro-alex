@@ -156,11 +156,29 @@ with tab_cartoes:
     
     if not df_cards_config.empty:
         for _, r in df_cards_config.iterrows():
-            ca, cb = st.columns([4,1])
-            ca.write(f"💳 {r['banco_nome']} - **{r['apelido_cartao']}** (Vence dia {r['dia_vencimento']})")
-            if cb.button("Excluir", key=f"del_c_{r['id']}"):
-                conn.table("gestao_cartoes_vinc").delete().eq("id", r['id']).execute()
-                st.rerun()
+            with st.expander(f"💳 {r['banco_nome']} - **{r['apelido_cartao']}** (Vence dia {r['dia_vencimento']})"):
+                ca, cb = st.columns([4,1])
+                ca.write(f"Configurações do cartão {r['apelido_cartao']}")
+                if cb.button("Excluir Cartão", key=f"del_c_{r['id']}"):
+                    conn.table("gestao_cartoes_vinc").delete().eq("id", r['id']).execute()
+                    st.rerun()
+                
+                # --- HISTÓRICO ESPECÍFICO DO CARTÃO ---
+                st.markdown("---")
+                st.write(f"📌 **Lançamentos em aberto neste cartão:**")
+                # Filtra despesas vinculadas a este ID de cartão que ainda não venceram ou são do mês selecionado
+                df_card_hist = df_raw[df_raw['id_vinc_cartao'] == r['id']] if not df_raw.empty else pd.DataFrame()
+                
+                if not df_card_hist.empty:
+                    # Ordenar por data para facilitar a leitura
+                    df_card_hist = df_card_hist.sort_values(by="data_dt", ascending=True)
+                    for _, row_c in df_card_hist.iterrows():
+                        c_col = st.columns([1.5, 3, 1.5])
+                        c_col[0].write(f"📅 {row_c['data_registro']}")
+                        c_col[1].write(f"{row_c['descricao']}")
+                        c_col[2].write(f"**R$ {row_c['valor']:.2f}**")
+                else:
+                    st.info("Nenhum lançamento encontrado para este cartão.")
 
 # --- ABA 4: DASHBOARD E HISTÓRICO ---
 with tab_dashboard:
@@ -192,17 +210,14 @@ with tab_dashboard:
             for _, row in df_view.iterrows():
                 data_vencimento_despesa = row['data_dt'].date()
                 
-                # Se for Cartão de Crédito, a data de vencimento é o dia configurado no cartão
                 if row['metodo'] == "Cartão de Crédito":
                     v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
                     v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
-                    # Ajusta a data de vencimento para o dia do cartão naquele mês/ano
                     try:
                         data_vencimento_despesa = datetime(row['data_dt'].year, row['data_dt'].month, v_dia).date()
-                    except: # Caso o dia não exista no mês (ex: 31 de fevereiro)
+                    except:
                         data_vencimento_despesa = datetime(row['data_dt'].year, row['data_dt'].month, 28).date()
 
-                # SÓ DESCONTA SE A DATA JÁ PASSOU OU É HOJE
                 if data_vencimento_despesa <= agora_br.date():
                     total_desp_efetiva += row['valor']
 
@@ -212,7 +227,7 @@ with tab_dashboard:
         c2.metric("📉 Despesas Efetivadas", f"R$ {total_desp_efetiva:,.2f}", help="Somente o que já venceu até hoje.")
         c3.metric("⚖️ Saldo Real Agora", f"R$ {(receita_total_disponivel - total_desp_efetiva):,.2f}")
 
-        # 5. GRÁFICO E HISTÓRICO (Mostra tudo do mês para planejamento)
+        # 5. GRÁFICO E HISTÓRICO
         if not df_view.empty:
             st.subheader(f"Planejamento de Gastos: {mes_sel}")
             st.bar_chart(df_view.groupby("categoria")["valor"].sum())
