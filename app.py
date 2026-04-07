@@ -40,7 +40,7 @@ st_autorefresh(interval=30000, key="datarefresh")
 conn = st.connection("supabase", type=SupabaseConnection, url=st.secrets["URL_SUPABASE"], key=st.secrets["KEY_SUPABASE"])
 
 st.sidebar.write(f"👤 Logado como: **{st.session_state['familiar_nome']}**")
-st.title("📊 Controle Financeiro Familiar")
+st.title("📊 Controle Financeiro Família Pratti")
 
 # --- BUSCA DE DADOS ---
 resp_desp = conn.table("controle_financeiro").select("*").order("created_at", desc=True).execute()
@@ -134,7 +134,7 @@ with tab_receitas:
         desc_e = st.text_input("Descrição da Receita")
         ce1, ce2 = st.columns(2)
         valor_e = ce1.number_input("Valor (R$)", min_value=0.0)
-        tipo_e = ce2.selectbox("Origem", ["Salário", "Serviços", "Outros"])
+        tipo_e = ce2.selectbox("Origem", ["Salário", "Adiantamento", "Pix Recebidos", "Valores Recebidos", "Outros"])
         if st.form_submit_button("Registrar Entrada"):
             conn.table("entradas_financeiras").insert({
                 "data_registro": agora_br.strftime("%d/%m/%Y"), "descricao": desc_e, 
