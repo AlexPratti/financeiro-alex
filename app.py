@@ -180,62 +180,97 @@ with tab_cartoes:
                 else:
                     st.info("Nenhum lançamento encontrado para este cartão.")
 
-# --- ABA 4: DASHBOARD E HISTÓRICO ---
+# --- ABA 4: DASHBOARD ---
 with tab_dashboard:
     if familiar_filter == "Ocultar":
         st.warning("⚠️ Selecione um familiar ou 'Todos' na barra lateral para ver os dados.")
     else:
-        # 1. Filtro base por Mês/Ano
-        df_view = df_raw[(df_raw['Ano'] == ano_sel) & (df_raw['Mes_PT'] == mes_sel)] if not df_raw.empty else pd.DataFrame()
-        df_ent_atual = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)] if not df_ent_raw.empty else pd.DataFrame()
+        # Identificação dos usuários (Assumindo os dois primeiros da lista de permitidos)
+        u1 = sorted(usuarios_permitidos)[0]
+        u2 = sorted(usuarios_permitidos)[1] if len(usuarios_permitidos) > 1 else None
 
-        if familiar_filter != "Todos":
-            df_view = df_view[df_view['familiar'] == familiar_filter] if not df_view.empty else df_view
-            df_ent_atual = df_ent_atual[df_ent_atual['familiar'] == familiar_filter] if not df_ent_atual.empty else df_ent_atual
+        # Função interna para calcular saldo acumulado e efetivo por usuário ou geral
+        def calc_status(nome_familiar=None):
+            # Receitas Acumuladas (Sempre Total)
+            df_e_filt = df_ent_raw if nome_familiar is None else df_ent_raw[df_ent_raw['familiar'] == nome_familiar]
+            total_rec = df_e_filt['valor'].sum() if not df_e_filt.empty else 0.0
 
-        # 2. CÁLCULO DE SALDO ACUMULADO (PASSADO)
-        mes_num_sel = list(meses_trad.keys())[list(meses_trad.values()).index(mes_sel)]
-        data_limite_inicio_mes = datetime(int(ano_sel), mes_num_sel, 1).date()
+            # Despesas Efetivadas (Tudo que já venceu até hoje)
+            df_d_filt = df_raw if nome_familiar is None else df_raw[df_raw['familiar'] == nome_familiar]
+            total_desp_e = 0.0
+            if not df_d_filt.empty:
+                for _, row in df_d_filt.iterrows():
+                    data_v = row['data_dt'].date()
+                    if row['metodo'] == "Cartão de Crédito":
+                        v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
+                        v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
+                        try: data_v = datetime(row['data_dt'].year, row['data_dt'].month, v_dia).date()
+                        except: data_v = datetime(row['data_dt'].year, row['data_dt'].month, 28).date()
+                    if data_v <= agora_br.date():
+                        total_desp_e += row['valor']
+            
+            return total_rec, total_desp_e, (total_rec - total_desp_e)
+
+        # Cálculo das 3 Linhas
+        t_rec, t_desp, t_saldo = calc_status(None)
+        u1_rec, u1_desp, u1_saldo = calc_status(u1)
+        if u2: u2_rec, u2_desp, u2_saldo = calc_status(u2)
+
+        # Exibição das Métricas Fixas (Independente de Filtro)
+        st.subheader("📌 Status Financeiro Atual (Acumulado)")
         
-        receita_passada = df_ent_raw[df_ent_raw['data_dt'].dt.date < data_limite_inicio_mes]['valor'].sum() if not df_ent_raw.empty else 0.0
-        despesa_passada = df_raw[df_raw['data_dt'].dt.date < data_limite_inicio_mes]['valor'].sum() if not df_raw.empty else 0.0
-        saldo_inicial_mes = receita_passada - despesa_passada
-        
-        receita_mes_total = df_ent_atual['valor'].sum() if not df_ent_atual.empty else 0.0
-        receita_total_disponivel = saldo_inicial_mes + receita_mes_total
-
-        # 3. LÓGICA DE DÉBITO EFETIVO (O que já saiu do bolso HOJE)
-        total_desp_efetiva = 0.0
-        if not df_view.empty:
-            for _, row in df_view.iterrows():
-                data_vencimento_despesa = row['data_dt'].date()
-                
-                if row['metodo'] == "Cartão de Crédito":
-                    v_info = df_cards_config[df_cards_config['id'] == row['id_vinc_cartao']]
-                    v_dia = int(v_info['dia_vencimento'].iloc[0]) if not v_info.empty else 28
-                    try:
-                        data_vencimento_despesa = datetime(row['data_dt'].year, row['data_dt'].month, v_dia).date()
-                    except:
-                        data_vencimento_despesa = datetime(row['data_dt'].year, row['data_dt'].month, 28).date()
-
-                if data_vencimento_despesa <= agora_br.date():
-                    total_desp_efetiva += row['valor']
-
-        # 4. EXIBIÇÃO DOS CARDS
+        # Linha 1: TOTAL
         c1, c2, c3 = st.columns(3)
-        c1.metric("📈 Receita Total (c/ Saldo)", f"R$ {receita_total_disponivel:,.2f}")
-        c2.metric("📉 Despesas Efetivadas", f"R$ {total_desp_efetiva:,.2f}", help="Somente o que já venceu até hoje.")
-        c3.metric("⚖️ Saldo Real Agora", f"R$ {(receita_total_disponivel - total_desp_efetiva):,.2f}")
+        c1.metric("📈 Receita Total (Geral)", f"R$ {t_rec:,.2f}")
+        c2.metric("📉 Despesas Efetivadas (Geral)", f"R$ {t_desp:,.2f}")
+        c3.metric("⚖️ Saldo Real Total", f"R$ {t_saldo:,.2f}")
+        st.divider()
 
-        # 5. GRÁFICO E HISTÓRICO
-        if not df_view.empty:
-            st.subheader(f"Planejamento de Gastos: {mes_sel}")
-            st.bar_chart(df_view.groupby("categoria")["valor"].sum())
+        # Linha 2: USUÁRIO 1
+        c4, c5, c6 = st.columns(3)
+        c4.metric(f"💰 Receita ({u1})", f"R$ {u1_rec:,.2f}")
+        c5.metric(f"💸 Despesas ({u1})", f"R$ {u1_desp:,.2f}")
+        c6.metric(f"🧤 Saldo Real ({u1})", f"R$ {u1_saldo:,.2f}")
 
-        if mostrar_historico:
-            st.subheader("📋 Histórico Detalhado do Mês")
-            if not df_view.empty:
-                for _, r in df_view.iterrows():
+        # Linha 3: USUÁRIO 2
+        if u2:
+            c7, c8, c9 = st.columns(3)
+            c7.metric(f"💰 Receita ({u2})", f"R$ {u2_rec:,.2f}")
+            c8.metric(f"💸 Despesas ({u2})", f"R$ {u2_desp:,.2f}")
+            c9.metric(f"🧤 Saldo Real ({u2})", f"R$ {u2_saldo:,.2f}")
+        
+        st.write("")
+        st.markdown("---")
+
+        # Sub-Abas para os dados filtrados
+        st.subheader(f"🔍 Análise de {mes_sel}/{ano_sel}")
+        sub_receitas, sub_despesas, sub_graficos = st.tabs(["📈 Detalhe Receitas", "💸 Detalhe Despesas", "📊 Gráficos & Histórico"])
+
+        # Filtragem para as Sub-Abas (Respeita a Sidebar)
+        df_view_d = df_raw[(df_raw['Ano'] == ano_sel) & (df_raw['Mes_PT'] == mes_sel)] if not df_raw.empty else pd.DataFrame()
+        df_view_e = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)] if not df_ent_raw.empty else pd.DataFrame()
+        if familiar_filter != "Todos":
+            df_view_d = df_view_d[df_view_d['familiar'] == familiar_filter] if not df_view_d.empty else df_view_d
+            df_view_e = df_view_e[df_view_e['familiar'] == familiar_filter] if not df_view_e.empty else df_view_e
+
+        with sub_receitas:
+            if not df_view_e.empty:
+                st.dataframe(df_view_e[['data_registro', 'descricao', 'valor', 'tipo_entrada', 'familiar']], use_container_width=True, hide_index=True)
+            else: st.info("Sem receitas para este período.")
+
+        with sub_despesas:
+            if not df_view_d.empty:
+                st.dataframe(df_view_d[['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']], use_container_width=True, hide_index=True)
+            else: st.info("Sem despesas para este período.")
+
+        with sub_graficos:
+            if not df_view_d.empty:
+                st.subheader(f"Gastos por Categoria: {mes_sel}")
+                st.bar_chart(df_view_d.groupby("categoria")["valor"].sum())
+            
+            if mostrar_historico and not df_view_d.empty:
+                st.subheader("📋 Histórico Detalhado (Ações)")
+                for _, r in df_view_d.iterrows():
                     col = st.columns([1, 2, 1, 1, 0.5])
                     col[0].write(r['data_registro'])
                     col[1].write(r['descricao'])
@@ -244,6 +279,7 @@ with tab_dashboard:
                     if col[4].button("🗑️", key=f"del_d_{r['id']}"):
                         conn.table("controle_financeiro").delete().eq("id", r['id']).execute()
                         st.rerun()
+
 
 # --- BOTÃO SAIR ---
 if st.sidebar.button("Sair / Trocar Usuário"):
