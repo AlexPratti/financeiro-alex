@@ -149,14 +149,29 @@ with tab_cartoes:
     st.subheader("⚙️ Configurar Cartões")
     with st.form("novo_cartao"):
         f1, f2, f3 = st.columns(3)
-        if f1.text_input("Banco") and f2.text_input("Nome do Cartão") and st.form_submit_button("Salvar"):
-            conn.table("gestao_cartoes_vinc").insert({"banco_nome": f1.text_input("Banco"), "apelido_cartao": f2.text_input("Nome do Cartão"), "dia_vencimento": f3.number_input("Dia Vencimento", 1, 31, 10)}).execute()
-            st.cache_data.clear()
-            st.rerun()
+        banco_n = f1.text_input("Banco")
+        cartao_n = f2.text_input("Nome do Cartão (Ex: Black 123)")
+        venc_d = f3.number_input("Dia Vencimento", 1, 31, 10)
+        
+        # O botão DEVE estar dentro do 'with st.form'
+        submit_c = st.form_submit_button("Salvar Cartão")
+        
+        if submit_c:
+            if banco_n and cartao_n:
+                conn.table("gestao_cartoes_vinc").insert({
+                    "banco_nome": banco_n, 
+                    "apelido_cartao": cartao_n, 
+                    "dia_vencimento": venc_d
+                }).execute()
+                st.cache_data.clear()
+                st.rerun()
+            else:
+                st.error("Preencha o Banco e o Nome do Cartão.")
     
     if not df_cards_config.empty:
         for _, r in df_cards_config.iterrows():
             with st.expander(f"💳 {r['banco_nome']} - **{r['apelido_cartao']}** (Vence dia {r['dia_vencimento']})"):
+                # Botão de excluir fora do form, dentro do expander
                 if st.button("Excluir Cartão", key=f"del_c_{r['id']}"):
                     conn.table("gestao_cartoes_vinc").delete().eq("id", r['id']).execute()
                     st.cache_data.clear()
