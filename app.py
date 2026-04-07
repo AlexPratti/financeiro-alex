@@ -95,7 +95,7 @@ with tab_gastos:
         c1, c2 = st.columns(2)
         with c1:
             valor_total = st.number_input("Valor (R$)", min_value=0.0, step=0.01)
-            cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro", "Lazer", "Supermercado", "Outros"])
+            cat = st.selectbox("Categoria", ["Água", "Energia", "Internet", "Lojas Virtuais", "Carro", "Combustível", "Farmácia", "Lazer", "Dízimo", "Supermercado", "Outros"])
         with c2:
             num_parcelas = st.number_input("Parcelas", min_value=1, max_value=24, value=1, disabled=not is_cartao)
         
