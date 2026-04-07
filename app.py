@@ -203,9 +203,23 @@ with tab_dashboard:
         if familiar_filter != "Todos":
             df_v_d = df_v_d[df_v_d['familiar'] == familiar_filter] if not df_v_d.empty else df_v_d
             df_v_e = df_v_e[df_v_e['familiar'] == familiar_filter] if not df_v_e.empty else df_v_e
+        with sub_rec: 
+            if not df_v_e.empty:
+                # Exibe apenas colunas relevantes para o usuário
+                cols_rec = ['data_registro', 'descricao', 'valor', 'tipo_entrada', 'familiar']
+                st.dataframe(df_v_e[cols_rec], use_container_width=True, hide_index=True)
+            else: 
+                st.info("Nenhuma receita encontrada para este período.")
 
-        with sub_rec: st.dataframe(df_v_e, use_container_width=True, hide_index=True) if not df_v_e.empty else st.info("Vazio")
-        with sub_desp: st.dataframe(df_v_d, use_container_width=True, hide_index=True) if not df_v_d.empty else st.info("Vazio")
+        with sub_desp: 
+            if not df_v_d.empty:
+                # Exibe apenas colunas relevantes para o usuário
+                cols_desp = ['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']
+                st.dataframe(df_v_d[cols_desp], use_container_width=True, hide_index=True)
+            else: 
+                st.info("Nenhuma despesa encontrada para este período.")
+
+        
         with sub_graf:
             if not df_v_d.empty:
                 st.bar_chart(df_v_d.groupby("categoria")["valor"].sum())
