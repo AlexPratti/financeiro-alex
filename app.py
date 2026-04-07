@@ -23,7 +23,7 @@ usuarios_permitidos = st.secrets["USUARIOS_PERMITIDOS"]
 
 # --- VALIDAÇÃO DE USUÁRIO ---
 if not st.session_state["autenticado"]:
-    st.title("🔐 Acesso ao Sistema")
+    st.title("🔐 Acesso ao Controle Financeiro")
     user_input = st.text_input("Informe seu usuário:").strip().capitalize()
     if st.button("Acessar"):
         if user_input.lower() in [u.lower() for u in usuarios_permitidos]:
