@@ -190,7 +190,6 @@ with tab_dashboard:
     if familiar_filter == "Ocultar":
         st.warning("⚠️ Selecione um familiar.")
     else:
-        # Garante que temos nomes individuais para os cálculos
         lista_usuarios = sorted(usuarios_permitidos)
         u1 = lista_usuarios[0] if len(lista_usuarios) > 0 else None
         u2 = lista_usuarios[1] if len(lista_usuarios) > 1 else None
@@ -204,7 +203,6 @@ with tab_dashboard:
 
         st.subheader("📌 Status Financeiro Atual (Acumulado)")
         
-        # Definição das linhas de métricas (Geral, Usuário 1, Usuário 2)
         metricas_para_exibir = [("Geral", None)]
         if u1: metricas_para_exibir.append((u1, u1))
         if u2: metricas_para_exibir.append((u2, u2))
@@ -231,31 +229,59 @@ with tab_dashboard:
 
         with sub_rec: 
             if not df_v_e.empty:
+                # Busca Manual em Português
+                busca_r = st.text_input("🔍 Buscar nas Receitas (Descrição ou Origem):", key="busca_r_dashboard").lower()
+                
                 cols_rec = ['data_registro', 'descricao', 'valor', 'tipo_entrada', 'familiar']
-                st.dataframe(df_v_e[cols_rec], use_container_width=True, hide_index=True)
-                total_r_mes = df_v_e['valor'].sum()
-                st.info(f"**Soma das Receitas no Período: R$ {total_r_mes:,.2f}**")
+                df_ex_e = df_v_e[cols_rec].copy()
+                
+                if busca_r:
+                    df_ex_e = df_ex_e[
+                        df_ex_e['descricao'].str.lower().str.contains(busca_r, na=False) | 
+                        df_ex_e['tipo_entrada'].str.lower().str.contains(busca_r, na=False)
+                    ]
+
+                st.dataframe(df_ex_e, use_container_width=True, hide_index=True)
+                total_r_mes = df_ex_e['valor'].sum()
+                st.info(f"**Soma das Receitas (Visíveis): R$ {total_r_mes:,.2f}**")
             else: st.info("Sem registros para este período.")
 
         with sub_desp: 
             if not df_v_d.empty:
+                # Busca Manual em Português
+                busca_d = st.text_input("🔍 Buscar nas Despesas (Descrição ou Categoria):", key="busca_d_dashboard").lower()
+                
                 cols_desp = ['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']
-                st.dataframe(df_v_d[cols_desp], use_container_width=True, hide_index=True)
-                total_d_mes = df_v_d['valor'].sum()
-                st.info(f"**Soma das Despesas no Período: R$ {total_d_mes:,.2f}**")
+                df_ex_d = df_v_d[cols_desp].copy()
+                
+                if busca_d:
+                    df_ex_d = df_ex_d[
+                        df_ex_d['descricao'].str.lower().str.contains(busca_d, na=False) | 
+                        df_ex_d['categoria'].str.lower().str.contains(busca_d, na=False)
+                    ]
+
+                st.dataframe(df_ex_d, use_container_width=True, hide_index=True)
+                total_d_mes = df_ex_d['valor'].sum()
+                st.info(f"**Soma das Despesas (Visíveis): R$ {total_d_mes:,.2f}**")
             else: st.info("Sem registros para este período.")
 
         with sub_graf:
             if not df_v_d.empty:
                 st.bar_chart(df_v_d.groupby("categoria")["valor"].sum())
                 if mostrar_historico:
+                    st.divider()
+                    st.subheader("📋 Ações (Excluir Lançamentos)")
                     for _, r in df_v_d.iterrows():
                         c = st.columns([1, 2, 1, 1, 0.5])
-                        c[0].write(r['data_registro']); c[1].write(r['descricao']); c[2].write(f"R$ {r['valor']:.2f}"); c[3].write(r['familiar'])
+                        c[0].write(r['data_registro'])
+                        c[1].write(r['descricao'])
+                        c[2].write(f"R$ {r['valor']:.2f}")
+                        c[3].write(r['familiar'])
                         if c[4].button("🗑️", key=f"del_v_{r['id']}"):
                             conn.table("controle_financeiro").delete().eq("id", r['id']).execute()
                             st.cache_data.clear()
                             st.rerun()
+
 
 
 if st.sidebar.button("Sair"):
