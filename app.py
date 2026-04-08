@@ -190,7 +190,10 @@ with tab_dashboard:
     if familiar_filter == "Ocultar":
         st.warning("⚠️ Selecione um familiar.")
     else:
-        u1, u2 = sorted(usuarios_permitidos), sorted(usuarios_permitidos) if len(usuarios_permitidos)>1 else None
+        # Garante que temos nomes individuais para os cálculos
+        lista_usuarios = sorted(usuarios_permitidos)
+        u1 = lista_usuarios[0] if len(lista_usuarios) > 0 else None
+        u2 = lista_usuarios[1] if len(lista_usuarios) > 1 else None
 
         def calc_status(nome=None):
             df_e = df_ent_raw if nome is None else df_ent_raw[df_ent_raw['familiar'] == nome]
@@ -200,22 +203,28 @@ with tab_dashboard:
             return rec, desp, rec - desp
 
         st.subheader("📌 Status Financeiro Atual (Acumulado)")
-        for label, nome in [("Geral", None), (u1, u1), (u2, u2)]:
-            if nome or label == "Geral":
-                r, d, s = calc_status(nome)
-                col1, col2, col3 = st.columns(3)
-                col1.metric(f"📈 Receita ({label})", f"R$ {r:,.2f}")
-                col2.metric(f"📉 Despesas ({label})", f"R$ {d:,.2f}")
-                col3.metric(f"⚖️ Saldo ({label})", f"R$ {s:,.2f}")
-                if label != u2: st.divider()
+        
+        # Definição das linhas de métricas (Geral, Usuário 1, Usuário 2)
+        metricas_para_exibir = [("Geral", None)]
+        if u1: metricas_para_exibir.append((u1, u1))
+        if u2: metricas_para_exibir.append((u2, u2))
+
+        for i, (label, nome) in enumerate(metricas_para_exibir):
+            r, d, s = calc_status(nome)
+            col1, col2, col3 = st.columns(3)
+            col1.metric(f"📈 Receita ({label})", f"R$ {r:,.2f}")
+            col2.metric(f"📉 Despesas ({label})", f"R$ {d:,.2f}")
+            col3.metric(f"⚖️ Saldo ({label})", f"R$ {s:,.2f}")
+            if i < len(metricas_para_exibir) - 1:
+                st.divider()
 
         st.markdown("---")
         st.subheader(f"🔍 Análise de {mes_sel}/{ano_sel}")
         sub_rec, sub_desp, sub_graf = st.tabs(["📈 Receitas", "💸 Despesas", "📊 Gráficos"])
         
-        # Variáveis de visão filtrada (Respeitam a Sidebar)
         df_v_d = df_raw[(df_raw['Ano'] == ano_sel) & (df_raw['Mes_PT'] == mes_sel)] if not df_raw.empty else pd.DataFrame()
         df_v_e = df_ent_raw[(df_ent_raw['Ano'] == ano_sel) & (df_ent_raw['Mes_PT'] == mes_sel)] if not df_ent_raw.empty else pd.DataFrame()
+        
         if familiar_filter != "Todos":
             df_v_d = df_v_d[df_v_d['familiar'] == familiar_filter] if not df_v_d.empty else df_v_d
             df_v_e = df_v_e[df_v_e['familiar'] == familiar_filter] if not df_v_e.empty else df_v_e
@@ -226,7 +235,7 @@ with tab_dashboard:
                 st.dataframe(df_v_e[cols_rec], use_container_width=True, hide_index=True)
                 total_r_mes = df_v_e['valor'].sum()
                 st.info(f"**Soma das Receitas no Período: R$ {total_r_mes:,.2f}**")
-            else: st.info("Vazio")
+            else: st.info("Sem registros para este período.")
 
         with sub_desp: 
             if not df_v_d.empty:
@@ -234,7 +243,7 @@ with tab_dashboard:
                 st.dataframe(df_v_d[cols_desp], use_container_width=True, hide_index=True)
                 total_d_mes = df_v_d['valor'].sum()
                 st.info(f"**Soma das Despesas no Período: R$ {total_d_mes:,.2f}**")
-            else: st.info("Vazio")
+            else: st.info("Sem registros para este período.")
 
         with sub_graf:
             if not df_v_d.empty:
