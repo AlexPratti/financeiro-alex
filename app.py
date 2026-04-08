@@ -229,41 +229,43 @@ with tab_dashboard:
 
         with sub_rec: 
             if not df_v_e.empty:
-                # Busca Manual em Português
-                busca_r = st.text_input("🔍 Buscar nas Receitas (Descrição ou Origem):", key="busca_r_dashboard").lower()
+                # FILTROS LADO A LADO
+                fr1, fr2 = st.columns([2, 1])
+                origens_disp = sorted(df_v_e['tipo_entrada'].unique())
+                sel_origens = fr1.multiselect("Filtrar por Origem:", origens_disp, placeholder="Selecione as origens...")
+                busca_r = fr2.text_input("🔍 Buscar por texto:", key="busca_r_dash").lower()
                 
-                cols_rec = ['data_registro', 'descricao', 'valor', 'tipo_entrada', 'familiar']
-                df_ex_e = df_v_e[cols_rec].copy()
+                df_ex_e = df_v_e[['data_registro', 'descricao', 'valor', 'tipo_entrada', 'familiar']].copy()
                 
+                # APLICAÇÃO DOS FILTROS
+                if sel_origens:
+                    df_ex_e = df_ex_e[df_ex_e['tipo_entrada'].isin(sel_origens)]
                 if busca_r:
-                    df_ex_e = df_ex_e[
-                        df_ex_e['descricao'].str.lower().str.contains(busca_r, na=False) | 
-                        df_ex_e['tipo_entrada'].str.lower().str.contains(busca_r, na=False)
-                    ]
+                    df_ex_e = df_ex_e[df_ex_e['descricao'].str.lower().str.contains(busca_r, na=False)]
 
                 st.dataframe(df_ex_e, use_container_width=True, hide_index=True)
-                total_r_mes = df_ex_e['valor'].sum()
-                st.info(f"**Soma das Receitas (Visíveis): R$ {total_r_mes:,.2f}**")
-            else: st.info("Sem registros para este período.")
+                st.info(f"**Soma das Receitas Filtradas: R$ {df_ex_e['valor'].sum():,.2f}**")
+            else: st.info("Sem registros.")
 
         with sub_desp: 
             if not df_v_d.empty:
-                # Busca Manual em Português
-                busca_d = st.text_input("🔍 Buscar nas Despesas (Descrição ou Categoria):", key="busca_d_dashboard").lower()
+                # FILTROS LADO A LADO
+                fd1, fd2 = st.columns([2, 1])
+                cats_disp = sorted(df_v_d['categoria'].unique())
+                sel_cats = fd1.multiselect("Filtrar por Categoria:", cats_disp, placeholder="Selecione as categorias...")
+                busca_d = fd2.text_input("🔍 Buscar por texto:", key="busca_d_dash").lower()
                 
-                cols_desp = ['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']
-                df_ex_d = df_v_d[cols_desp].copy()
+                df_ex_d = df_v_d[['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']].copy()
                 
+                # APLICAÇÃO DOS FILTROS
+                if sel_cats:
+                    df_ex_d = df_ex_d[df_ex_d['categoria'].isin(sel_cats)]
                 if busca_d:
-                    df_ex_d = df_ex_d[
-                        df_ex_d['descricao'].str.lower().str.contains(busca_d, na=False) | 
-                        df_ex_d['categoria'].str.lower().str.contains(busca_d, na=False)
-                    ]
+                    df_ex_d = df_ex_d[df_ex_d['descricao'].str.lower().str.contains(busca_d, na=False)]
 
                 st.dataframe(df_ex_d, use_container_width=True, hide_index=True)
-                total_d_mes = df_ex_d['valor'].sum()
-                st.info(f"**Soma das Despesas (Visíveis): R$ {total_d_mes:,.2f}**")
-            else: st.info("Sem registros para este período.")
+                st.info(f"**Soma das Despesas Filtradas: R$ {df_ex_d['valor'].sum():,.2f}**")
+            else: st.info("Sem registros.")
 
         with sub_graf:
             if not df_v_d.empty:
@@ -281,6 +283,7 @@ with tab_dashboard:
                             conn.table("controle_financeiro").delete().eq("id", r['id']).execute()
                             st.cache_data.clear()
                             st.rerun()
+
 
 
 
