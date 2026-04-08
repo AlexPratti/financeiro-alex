@@ -229,43 +229,49 @@ with tab_dashboard:
 
         with sub_rec: 
             if not df_v_e.empty:
-                # FILTROS LADO A LADO
-                fr1, fr2 = st.columns([2, 1])
+                # FILTROS LADO A LADO COM LISTBOX
+                fr1, fr2 = st.columns(2)
                 origens_disp = sorted(df_v_e['tipo_entrada'].unique())
-                sel_origens = fr1.multiselect("Filtrar por Origem:", origens_disp, placeholder="Selecione as origens...")
-                busca_r = fr2.text_input("🔍 Buscar por texto:", key="busca_r_dash").lower()
+                sel_origens = fr1.multiselect("Filtrar por Origem:", origens_disp, placeholder="Escolha a origem...")
+                
+                # Listbox dinâmico para Descrição (Autocomplete)
+                desc_disp_r = sorted(df_v_e['descricao'].unique())
+                sel_desc_r = fr2.multiselect("Buscar Descrição:", desc_disp_r, placeholder="Digite ou selecione...")
                 
                 df_ex_e = df_v_e[['data_registro', 'descricao', 'valor', 'tipo_entrada', 'familiar']].copy()
                 
                 # APLICAÇÃO DOS FILTROS
                 if sel_origens:
                     df_ex_e = df_ex_e[df_ex_e['tipo_entrada'].isin(sel_origens)]
-                if busca_r:
-                    df_ex_e = df_ex_e[df_ex_e['descricao'].str.lower().str.contains(busca_r, na=False)]
+                if sel_desc_r:
+                    df_ex_e = df_ex_e[df_ex_e['descricao'].isin(sel_desc_r)]
 
                 st.dataframe(df_ex_e, use_container_width=True, hide_index=True)
                 st.info(f"**Soma das Receitas Filtradas: R$ {df_ex_e['valor'].sum():,.2f}**")
-            else: st.info("Sem registros.")
+            else: st.info("Sem registros para este período.")
 
         with sub_desp: 
             if not df_v_d.empty:
-                # FILTROS LADO A LADO
-                fd1, fd2 = st.columns([2, 1])
+                # FILTROS LADO A LADO COM LISTBOX
+                fd1, fd2 = st.columns(2)
                 cats_disp = sorted(df_v_d['categoria'].unique())
-                sel_cats = fd1.multiselect("Filtrar por Categoria:", cats_disp, placeholder="Selecione as categorias...")
-                busca_d = fd2.text_input("🔍 Buscar por texto:", key="busca_d_dash").lower()
+                sel_cats = fd1.multiselect("Filtrar por Categoria:", cats_disp, placeholder="Escolha a categoria...")
+                
+                # Listbox dinâmico para Descrição (Autocomplete)
+                desc_disp_d = sorted(df_v_d['descricao'].unique())
+                sel_desc_d = fd2.multiselect("Buscar Descrição:", desc_disp_d, placeholder="Digite ou selecione...")
                 
                 df_ex_d = df_v_d[['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']].copy()
                 
                 # APLICAÇÃO DOS FILTROS
                 if sel_cats:
                     df_ex_d = df_ex_d[df_ex_d['categoria'].isin(sel_cats)]
-                if busca_d:
-                    df_ex_d = df_ex_d[df_ex_d['descricao'].str.lower().str.contains(busca_d, na=False)]
+                if sel_desc_d:
+                    df_ex_d = df_ex_d[df_ex_d['descricao'].isin(sel_desc_d)]
 
                 st.dataframe(df_ex_d, use_container_width=True, hide_index=True)
                 st.info(f"**Soma das Despesas Filtradas: R$ {df_ex_d['valor'].sum():,.2f}**")
-            else: st.info("Sem registros.")
+            else: st.info("Sem registros para este período.")
 
         with sub_graf:
             if not df_v_d.empty:
@@ -283,8 +289,6 @@ with tab_dashboard:
                             conn.table("controle_financeiro").delete().eq("id", r['id']).execute()
                             st.cache_data.clear()
                             st.rerun()
-
-
 
 
 if st.sidebar.button("Sair"):
