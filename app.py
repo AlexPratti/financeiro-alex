@@ -218,21 +218,52 @@ with tab_dashboard:
         if familiar_filter != "Todos":
             df_v_d = df_v_d[df_v_d['familiar'] == familiar_filter] if not df_v_d.empty else df_v_d
             df_v_e = df_v_e[df_v_e['familiar'] == familiar_filter] if not df_v_e.empty else df_v_e
+
         with sub_rec: 
-            if not df_v_e.empty:
-                # Exibe apenas colunas relevantes para o usuário
+            if not df_view_e.empty:
+                # Seleção de colunas relevantes
                 cols_rec = ['data_registro', 'descricao', 'valor', 'tipo_entrada', 'familiar']
-                st.dataframe(df_v_e[cols_rec], use_container_width=True, hide_index=True)
+                df_exibir_e = df_view_e[cols_rec].copy()
+                
+                # Exibição com filtros interativos nas colunas
+                st.dataframe(
+                    df_exibir_e, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "descricao": st.column_config.TextColumn("Descrição", help="Filtre por nome"),
+                        "tipo_entrada": st.column_config.SelectColumn("Origem", help="Filtre por tipo")
+                    }
+                )
+                # Totalizador no final
+                total_mes_rec = df_exibir_e['valor'].sum()
+                st.markdown(f"**Total de Receitas no Período: R$ {total_mes_rec:,.2f}**")
             else: 
                 st.info("Nenhuma receita encontrada para este período.")
 
         with sub_desp: 
-            if not df_v_d.empty:
-                # Exibe apenas colunas relevantes para o usuário
+            if not df_view_d.empty:
+                # Seleção de colunas relevantes
                 cols_desp = ['data_registro', 'descricao', 'valor', 'categoria', 'metodo', 'familiar']
-                st.dataframe(df_v_d[cols_desp], use_container_width=True, hide_index=True)
+                df_exibir_d = df_view_d[cols_desp].copy()
+                
+                # Exibição com filtros interativos nas colunas
+                st.dataframe(
+                    df_exibir_d, 
+                    use_container_width=True, 
+                    hide_index=True,
+                    column_config={
+                        "descricao": st.column_config.TextColumn("Descrição"),
+                        "categoria": st.column_config.SelectColumn("Categoria"),
+                        "metodo": st.column_config.SelectColumn("Método")
+                    }
+                )
+                # Totalizador no final
+                total_mes_desp = df_exibir_d['valor'].sum()
+                st.markdown(f"**Total de Despesas no Período: R$ {total_mes_desp:,.2f}**")
             else: 
                 st.info("Nenhuma despesa encontrada para este período.")
+
 
         
         with sub_graf:
